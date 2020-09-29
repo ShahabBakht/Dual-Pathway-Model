@@ -1,12 +1,15 @@
 import os
 import sys
-sys.path.append('../../Mouse_CNN/cmouse')
-import network
-import mousenet
 import torch
 import torch.nn as nn
 from resnet_2d3d import * 
 from vgg_2d import *
+try:
+    sys.path.append('../../Mouse_CNN/cmouse')
+    import network
+    import mousenet
+except:
+    print('MouseNet does not exist')
 
 def select_resnet(network, track_running_stats=True,):
     param = {'feature_size': 1024}
