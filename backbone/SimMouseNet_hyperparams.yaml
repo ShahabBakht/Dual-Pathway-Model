@@ -1,0 +1,54 @@
+model:
+    Retina:
+        in_channels: 3
+        out_channels: 32
+        kernel_size: 3
+        padding: 1
+    LGN:
+        out_channels:
+        kernel_size:
+        padding:
+    VISp:
+        L4_out_channels:
+        L4_kernel_size:
+        L4_padding:
+        L2_3_kernel_size:
+        L2_3_stride:
+        L5_kernel_size:
+        L5_hidden_size:
+    VISl:
+        L4_out_channels:
+        L4_kernel_size:
+        L4_padding:
+        L2_3_kernel_size:
+        L2_3_stride:
+        L5_kernel_size:
+        L5_hidden_size:
+    VISal:
+        L4_out_channels:
+        L4_kernel_size:
+        L4_padding:
+        L2_3_kernel_size:
+        L2_3_stride:
+        L5_kernel_size:
+        L5_hidden_size:
+    VISpm:
+        L4_out_channels:
+        L4_kernel_size:
+        L4_padding:
+        L2_3_kernel_size:
+        L2_3_stride:
+        L5_kernel_size:
+        L5_hidden_size:
+    VISam:
+        L4_out_channels:
+        L4_kernel_size:
+        L4_padding:
+        L2_3_kernel_size:
+        L2_3_stride:
+        L5_kernel_size:
+        L5_hidden_size:
+    
+
+model_name: SimMouseNet
+

@@ -3,25 +3,76 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import networkx as nx
+import yaml
 
+
+from SimMouseNet_network import Network
 from convrnn import ConvGRU
-
-AREAS_LIST = ['VISp', 'VISl', 'VISal', 'VISpm', 'VISam']
 
 
 class SimMouseNet(nn.Module):
     def __init__(self):
         super(SimMouseNet, self).__init__()
         
+        self.MouseGraph = Network()
+        
         self.Areas = nn.ModuleDict()
+        
+        self.hyperparams = yaml.load(open('./SimMouseNet_hyperparams.yml'), Loader=yaml.FullLoader)
+    
+    def make_SimMouseNet(self):
         
         self.Aeas['Retina'] = Retina()
         self.Areas['LGN'] = LGN()
         
-        for area in AREAS_LIST
-            self.Areas[area] = Area()
-                
+        MouseGraph.create_graph()
         
+        AREAS_LIST = self.MouseGraph.G.nodes
+        
+        for area in AREAS_LIST:
+            hyperparams = self.hyperparams['model'][area]
+            
+            if area == 'Retina':
+                
+                self.Areas[area] = Retina(in_channels = hyperparams['in_channels'], 
+                                          out_channels = hyperparams['out_channels'], 
+                                          kernel_size = hyperparams['kernel_size'], 
+                                          padding = hyperparams['padding'])
+            
+            elif area == 'LGN':
+                
+                predec_area = MouseGraph.G.predecessors[area]
+                this_area_in_channels = self.hyperparams['model'][predec_area].out_channels
+                
+                self.Areas[area] = LGN(in_channels = this_area_in_channels, 
+                                       out_channels = hyperparams['out_channels'], 
+                                       kernel_size = hyperparams['kernel_size'], 
+                                       padding = hyperparams['padding'])
+            
+
+            else:
+                predec_area = MouseGraph.G.predecessors[area]
+                
+                if area == 'VISp':
+                
+                    this_area_in_channels = self.hyperparams['model'][predec_area].out_channels
+                
+                else:
+                    this_area_in_channels = self.hyperparams['model'][predec_area].L4_out_channels
+                    
+                    
+                self.Areas[area] == Area(L4_in_channels = this_area_in_channels, 
+                                         L4_out_channels = hyperparams['L4_out_channels'], 
+                                         L4_kernel_size = hyperparams['L4_kernel_size'], 
+                                         L4_padding = hyperparams['L4_padding'],
+                                         L2_3_kernel_size = hyperparams['L2_3_kernel_size'], 
+                                         L2_3_stride = hyperparams['L2_3_stride'], 
+                                         L5_input_size = hyperparams['L5_input_size'], 
+                                         L5_kernel_size = hyperparams['L5_kernel_size'], 
+                                         L5_hidden_size = hyperparams['L5_hidden_size'])
+                
+                    
+                
 
     def forward(self, input):
         pass
