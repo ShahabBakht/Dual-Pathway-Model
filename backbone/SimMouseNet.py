@@ -2,21 +2,26 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import networkx as nx
 
 from convrnn import ConvGRU
+
+AREAS_LIST = ['VISp', 'VISl', 'VISal', 'VISpm', 'VISam']
 
 
 class SimMouseNet(nn.Module):
     def __init__(self):
         super(SimMouseNet, self).__init__()
-
-        self.Retina = Retina(in_channels, out_channels, kernel_size = 3, padding = 1)
-        self.LGN = LGN(in_channels, out_channels, kernel_size = 3, padding = 1)
-        self.VISp = Area()
-        self.VISal = Area()
-        self.VISl = Area()
-        self.VISpm = Area()
-        self.VISam = Area()
+        
+        self.Areas = nn.ModuleDict()
+        
+        self.Aeas['Retina'] = Retina()
+        self.Areas['LGN'] = LGN()
+        
+        for area in AREAS_LIST
+            self.Areas[area] = Area()
+                
+        
 
     def forward(self, input):
         pass
@@ -26,7 +31,7 @@ class Area(nn.Module):
     def __init__(self, 
                     L4_in_channels, L4_out_channels, L4_kernel_size, L4_padding,
                     L2_3_kernel_size, L2_3_stride, 
-                    L5_out_channels, L5_kernel_size, L5_passing,
+                    L5_input_size, L5_kernel_size, L5_hidden_size,
                 ):
         super(Area, self).__init__()
 
