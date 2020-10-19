@@ -5,49 +5,49 @@ model:
         kernel_size: 3
         padding: 1
     LGN:
-        out_channels:
-        kernel_size:
-        padding:
+        out_channels: 5
+        kernel_size: 3
+        padding: 2
     VISp:
-        L4_out_channels:
-        L4_kernel_size:
-        L4_padding:
-        L2_3_kernel_size:
-        L2_3_stride:
-        L5_kernel_size:
-        L5_hidden_size:
+        L4_out_channels: 32
+        L4_kernel_size: 3
+        L4_padding: 1
+        L2_3_kernel_size: 2
+        L2_3_stride: 2
+        L5_kernel_size: 1
+        L5_hidden_size: 20
     VISl:
-        L4_out_channels:
-        L4_kernel_size:
-        L4_padding:
-        L2_3_kernel_size:
-        L2_3_stride:
-        L5_kernel_size:
-        L5_hidden_size:
+        L4_out_channels: 32
+        L4_kernel_size: 3
+        L4_padding: 1
+        L2_3_kernel_size: 2
+        L2_3_stride: 2
+        L5_kernel_size: 1
+        L5_hidden_size: 20
     VISal:
-        L4_out_channels:
-        L4_kernel_size:
-        L4_padding:
-        L2_3_kernel_size:
-        L2_3_stride:
-        L5_kernel_size:
-        L5_hidden_size:
+        L4_out_channels: 32
+        L4_kernel_size: 3
+        L4_padding: 1
+        L2_3_kernel_size: 2
+        L2_3_stride: 2
+        L5_kernel_size: 1
+        L5_hidden_size: 20
     VISpm:
-        L4_out_channels:
-        L4_kernel_size:
-        L4_padding:
-        L2_3_kernel_size:
-        L2_3_stride:
-        L5_kernel_size:
-        L5_hidden_size:
+        L4_out_channels: 32
+        L4_kernel_size: 3
+        L4_padding: 1
+        L2_3_kernel_size: 2
+        L2_3_stride: 2 
+        L5_kernel_size: 1
+        L5_hidden_size: 20
     VISam:
-        L4_out_channels:
-        L4_kernel_size:
-        L4_padding:
-        L2_3_kernel_size:
-        L2_3_stride:
-        L5_kernel_size:
-        L5_hidden_size:
+        L4_out_channels: 32
+        L4_kernel_size: 3
+        L4_padding: 1
+        L2_3_kernel_size: 2
+        L2_3_stride: 2
+        L5_kernel_size: 1
+        L5_hidden_size: 20
     
 
 model_name: SimMouseNet
