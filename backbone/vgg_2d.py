@@ -215,10 +215,17 @@ def vgg19_bn(pretrained=False, progress=True, **kwargs):
 
 
 if __name__ == '__main__':
-    mymodel = vgg16(pretrained=False)
+    
+    import time
     mydata = torch.FloatTensor(10, 3, 5, 128, 128)
 #     mydata = mydata.permute(0,2,1,3,4).contiguous().view((64,3,128,128))
     nn.init.normal_(mydata)
+    tic = time.time()
+    mymodel = vgg16(pretrained=False)
+    
+    
+    out = mymodel(mydata)
+    
+    print(time.time()-tic)
     import ipdb; ipdb.set_trace()
-    mymodel(mydata)
 

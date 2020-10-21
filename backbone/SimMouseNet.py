@@ -75,11 +75,12 @@ class SimMouseNet(nn.Module):
 
     def forward(self, input):
         
-        B, N, C, W, H = input.shape
-        input_tempflat = input.view((B*N, C, W, H)).contiguous()
+        BN, C, SL, W, H = input.shape
+        input_tempflat = input.permute(0,2,1,3,4).contiguous().view((BN*SL,C,H,W)) 
+#         print(input_tempflat.shape)
+#         input_tempflat = input.view((B*N, C, W, H)).contiguous()
 
         Out = dict()
-        Agg_in = torch.empty((B,N,20,W//4,H//4)).to('cuda')
         for area in self.AREAS_LIST:
             print(area)
             if area == 'Retina':
@@ -93,20 +94,22 @@ class SimMouseNet(nn.Module):
                 predec_area = list(self.MouseGraph.G.predecessors(area))
                 
                 if area == 'VISp':
-                    Out[area] = self.Areas[area](Out[predec_area[0]])
-                    B, N, C_, W_, H_ = Out[area][0].shape
-                    print(B, N, C_, W_, H_)
-                    Out_to_agg = torch.nn.functional.avg_pool2d(Out[area][0].view((B*N, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((B,N,C_, W_//2, H_//2)).contiguous()
+                    Out[area] = self.Areas[area](Out[predec_area[0]],SL)
+                    BN, SL, C_, W_, H_ = Out[area][0].shape
+#                     print(BN, SL, C_, W_, H_)
+                    Out_to_agg = torch.nn.functional.avg_pool2d(Out[area][0].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
                 else:
                     print(Out[predec_area[0]][1].shape)
-                    Out[area] = self.Areas[area](Out[predec_area[0]][1])
-                    Out_to_agg = Out[area][0]
+                    Out[area] = self.Areas[area](Out[predec_area[0]][1],SL)
+                    Out_to_agg = torch.cat((Out_to_agg,Out[area][0]),dim=2)
                     
                 
-                
-                Agg_in = torch.cat((Agg_in,Out_to_agg),dim=2)
-            
-        return Out, Agg_in
+    
+#                 Agg_in = torch.cat((Agg_in,Out_to_agg),dim=2)
+        
+        Out2Agg = Out_to_agg.permute(0,2,1,3,4).contiguous()
+        
+        return Out, Out2Agg
                 
                 
 
@@ -125,20 +128,20 @@ class Area(nn.Module):
         self.L5 = Layer_5(input_size = 2*L4_out_channels, kernel_size = L5_kernel_size, hidden_size = L5_hidden_size)
 
 
-    def forward(self, input):
+    def forward(self, input,frames_per_block):
         
         
         out_l4 = self.L4(input)
         out_l2_3 = self.L2_3(out_l4)
         
         # to concatenate l4 and l2_3 output to feed to l5
+        print('out_l4',out_l4.shape)
         out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=2, stride=2)
-        
-        BN_l45, C_l45, W_l45, H_l45 = out_l4_to_l5.shape
-        out_l4_to_l5 = out_l4_to_l5.view((B,N, C_l45, W_l45, H_l45)).contiguous()
+        BNSL, C_l45, W_l45, H_l45 = out_l4_to_l5.shape
+        out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
 
-        BN_l2_3, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
-        out_l2_3_to_l5 = out_l2_3.view((B, N, C_l2_3, W_l2_3, H_l2_3)).contiguous()
+        BNSL, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
+        out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
         
         in_l5 = torch.cat((out_l4_to_l5,out_l2_3_to_l5),dim=2)
         print(in_l5.shape)
@@ -159,7 +162,8 @@ class LGN(nn.Module):
 
         lgn_out = self.conv(input)
         lgn_out = self.nonlnr(lgn_out)
-
+        print('lgn_out',lgn_out.shape)
+        
         return lgn_out
 
 class Retina(nn.Module):
@@ -174,6 +178,7 @@ class Retina(nn.Module):
 
         retina_out = self.conv(input)
         retina_out = self.nonlnr(retina_out)
+        print('retina_out',retina_out.shape)
 
         return retina_out
 
@@ -209,55 +214,31 @@ class Layer_5(nn.Module):
         super(Layer_5, self).__init__()
         
         self.convgru = ConvGRU(input_size = input_size, hidden_size = hidden_size, kernel_size=1, num_layers=1)
-        self.nonlnr = nn.ReLU()
 
     def forward(self, input):
         
         l5_out, _ = self.convgru(input)
-        l5_out = self.nonlnr(l5_out)
         
         return l5_out
         
         
 if __name__ == '__main__':
-#     retina = Retina(in_channels = 3, out_channels = 32, kernel_size = 3, padding = 1).to('cuda')
-#     lgn = LGN(in_channels = 32, out_channels = 5, kernel_size = 3, padding = 1).to('cuda')
-#     l4 = Layer_4(in_channels = 5, out_channels = 32, kernel_size = 3, padding = 1).to('cuda')
-#     l2_3 = Layer_2_3(kernel_size = 2, stride = 2).to('cuda')
-#     l5 = Layer_5(input_size = 32, hidden_size=20, kernel_size=1).to('cuda')
-#     area = Area(L4_in_channels = 5, L4_out_channels = 32, L4_kernel_size = 3, L4_padding = 1,
-#                     L2_3_kernel_size = 2, L2_3_stride = 2, 
-#                     L5_input_size = 64, L5_kernel_size = 1, L5_hidden_size = 20).to('cuda')
-    sim_mouse_net = SimMouseNet()
-    sim_mouse_net.make_SimMouseNet()
-    sim_mouse_net.to('cuda')
+    
+    import time
+    import ipdb
     
     mydata = torch.FloatTensor(10, 3, 5, 128, 128).to('cuda')
 #     mydata = torch.FloatTensor(10, 3, 128, 128)
 #     mydata = mydata.permute(0,2,1,3,4).contiguous().view((64,3,128,128))
     nn.init.normal_(mydata)
-    import ipdb
-    mydata = mydata.permute((0,2,1,3,4)).contiguous()
-    B, N, C, W, H = mydata.shape
-#     print(B, N, C, W, H)
+    
+    tic = time.time()
+    sim_mouse_net = SimMouseNet()
+    sim_mouse_net.make_SimMouseNet()
+    sim_mouse_net.to('cuda')
+    
     out1, out2 = sim_mouse_net(mydata)
 
-#     mydata_tempflat = mydata.view((B*N, C, W, H)).contiguous()
-#     out_retina = retina(mydata_tempflat)
-#     out_lgn = lgn(out_retina) 
-#     out_area1, out_area2 = area(out_lgn)
-#     out_l4 = l4(out_lgn)
-#     out_l2_3 = l2_3(out_l4)
-    
-#     out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=2, stride=2)
-#     BN_l4, C_l4, W_l4, H_l4 = out_l4_to_l5.shape
-#     out_l4_to_l5 = out_l4_to_l5.view((B,N, C_l4, W_l4, H_l4)).contiguous()
-#     print(out_l4_to_l5.shape)
-    
-#     BN_l2_3, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
-#     out_l2_3 = out_l2_3.view((B, N, C_l2_3, W_l2_3, H_l2_3)).contiguous()
-#     print(out_l2_3.shape)
-    
-#     out_l5 = l5(out_l2_3)
+    print(time.time()-tic)
     
     ipdb.set_trace()

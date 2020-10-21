@@ -7,7 +7,7 @@ model:
     LGN:
         out_channels: 5
         kernel_size: 3
-        padding: 2
+        padding: 1
     VISp:
         L4_out_channels: 32
         L4_kernel_size: 3
