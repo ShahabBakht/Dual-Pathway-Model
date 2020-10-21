@@ -11,7 +11,7 @@ from convrnn import ConvGRU
 
 
 class SimMouseNet(nn.Module):
-    def __init__(self):
+    def __init__(self,init_weights=True):
         super(SimMouseNet, self).__init__()
         
         self.MouseGraph = Network()
@@ -20,6 +20,12 @@ class SimMouseNet(nn.Module):
         self.Areas = nn.ModuleDict()
         
         self.hyperparams = yaml.load(open('./SimMouseNet_hyperparams.yaml'), Loader=yaml.FullLoader)
+        
+        self.make_SimMouseNet()
+        
+        if init_weights:
+            self._initialize_weights()
+        
     
     def make_SimMouseNet(self):
         
@@ -27,10 +33,11 @@ class SimMouseNet(nn.Module):
 #         self.Areas['LGN'] = LGN()
         
         self.AREAS_LIST = self.MouseGraph.G.nodes
+        self.OUTPUT_AREA_LIST = self.MouseGraph.OUTPUT_AREA_LIST
         
         for area in self.AREAS_LIST:
             hyperparams = self.hyperparams['model'][area]
-            print(area)
+
             if area == 'Retina':
                 
                 self.Areas[area] = Retina(in_channels = hyperparams['in_channels'], 
@@ -82,7 +89,7 @@ class SimMouseNet(nn.Module):
 
         Out = dict()
         for area in self.AREAS_LIST:
-            print(area)
+
             if area == 'Retina':
                 Out[area] = self.Areas[area](input_tempflat)
                 
@@ -97,22 +104,35 @@ class SimMouseNet(nn.Module):
                     Out[area] = self.Areas[area](Out[predec_area[0]],SL)
                     BN, SL, C_, W_, H_ = Out[area][0].shape
 #                     print(BN, SL, C_, W_, H_)
-                    Out_to_agg = torch.nn.functional.avg_pool2d(Out[area][0].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
+                    if area in self.OUTPUT_AREA_LIST:
+                        Out_to_agg = torch.nn.functional.avg_pool2d(Out[area][0].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
                 else:
-                    print(Out[predec_area[0]][1].shape)
+
                     Out[area] = self.Areas[area](Out[predec_area[0]][1],SL)
-                    Out_to_agg = torch.cat((Out_to_agg,Out[area][0]),dim=2)
-                    
-                
-    
-#                 Agg_in = torch.cat((Agg_in,Out_to_agg),dim=2)
+                    if area in self.OUTPUT_AREA_LIST:
+                        try:
+                            Out_to_agg = torch.cat((Out_to_agg,Out[area][0]),dim=2)
+                        except:
+                            Out_to_agg = Out[area][0]
+
         
         Out2Agg = Out_to_agg.permute(0,2,1,3,4).contiguous()
         
         return Out, Out2Agg
                 
                 
-
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm3d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
 
 class Area(nn.Module):
@@ -135,7 +155,6 @@ class Area(nn.Module):
         out_l2_3 = self.L2_3(out_l4)
         
         # to concatenate l4 and l2_3 output to feed to l5
-        print('out_l4',out_l4.shape)
         out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=2, stride=2)
         BNSL, C_l45, W_l45, H_l45 = out_l4_to_l5.shape
         out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
@@ -144,7 +163,6 @@ class Area(nn.Module):
         out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
         
         in_l5 = torch.cat((out_l4_to_l5,out_l2_3_to_l5),dim=2)
-        print(in_l5.shape)
         out_l5 = self.L5(in_l5)
         
         return out_l5, out_l2_3
@@ -162,7 +180,6 @@ class LGN(nn.Module):
 
         lgn_out = self.conv(input)
         lgn_out = self.nonlnr(lgn_out)
-        print('lgn_out',lgn_out.shape)
         
         return lgn_out
 
@@ -178,8 +195,7 @@ class Retina(nn.Module):
 
         retina_out = self.conv(input)
         retina_out = self.nonlnr(retina_out)
-        print('retina_out',retina_out.shape)
-
+        
         return retina_out
 
 
@@ -233,10 +249,10 @@ if __name__ == '__main__':
     nn.init.normal_(mydata)
     
     tic = time.time()
-    sim_mouse_net = SimMouseNet()
-    sim_mouse_net.make_SimMouseNet()
-    sim_mouse_net.to('cuda')
-    
+    sim_mouse_net = SimMouseNet().to('cuda')
+#     sim_mouse_net.make_SimMouseNet()
+#     sim_mouse_net.to('cuda')
+        
     out1, out2 = sim_mouse_net(mydata)
 
     print(time.time()-tic)

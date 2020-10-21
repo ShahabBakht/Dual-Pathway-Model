@@ -33,6 +33,9 @@ class DPC_RNN(nn.Module):
         elif network == 'mousenet':
             self.last_size = 16
             self.pool_size = 2 # (2 for all readout, 4 for VISp5 readout)
+        elif network == 'simmousenet':
+            self.last_size = 16
+            self.pool_size = 2
         else:
             self.last_size = int(math.ceil(sample_size / 32))
             self.pool_size = 1
@@ -41,6 +44,8 @@ class DPC_RNN(nn.Module):
         print('final feature map has size %dx%d' % (self.last_size, self.last_size))
         if network == 'mousenet':
             self.backbone, self.param = select_mousenet()
+        elif network == 'simmousenet':
+            self.backbone, self.param = select_simmousenet()
         else:
             self.backbone, self.param = select_resnet(network, track_running_stats=False)
             
