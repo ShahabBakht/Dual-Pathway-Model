@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from resnet_2d3d import * 
 from vgg_2d import *
+from SimMouseNet import *
+
 try:
     sys.path.append('../../Mouse_CNN/cmouse')
     import network
@@ -57,4 +59,13 @@ def select_mousenet():
     
     return model, param
 
+def select_simmousenet():
+    param = {'feature_size': None}
+    model = SimMouseNet()
+    param['output_area_list'] = model.OUTPUT_AREA_LIST
+    
+    param['feature_size'] = 320 
 
+    # TO DO: make feature_size calculation automatic
+    
+    return model, param

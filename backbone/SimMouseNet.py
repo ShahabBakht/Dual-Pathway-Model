@@ -19,7 +19,7 @@ class SimMouseNet(nn.Module):
         
         self.Areas = nn.ModuleDict()
         
-        self.hyperparams = yaml.load(open('./SimMouseNet_hyperparams.yaml'), Loader=yaml.FullLoader)
+        self.hyperparams = yaml.load(open('/home/mila/b/bakhtias/Project-Codes/CPC/backbone/SimMouseNet_hyperparams.yaml'), Loader=yaml.FullLoader)
         
         self.make_SimMouseNet()
         
@@ -118,7 +118,7 @@ class SimMouseNet(nn.Module):
         
         Out2Agg = Out_to_agg.permute(0,2,1,3,4).contiguous()
         
-        return Out, Out2Agg
+        return Out2Agg #Out, 
                 
                 
     def _initialize_weights(self):
@@ -175,10 +175,12 @@ class LGN(nn.Module):
 
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
         self.nonlnr = nn.ReLU()
+        self.bn= nn.BatchNorm2d(out_channels)
     
     def forward(self, input):
 
         lgn_out = self.conv(input)
+        lgn_out = self.bn(lgn_out)
         lgn_out = self.nonlnr(lgn_out)
         
         return lgn_out
@@ -189,11 +191,12 @@ class Retina(nn.Module):
 
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
         self.nonlnr = nn.ReLU()
-
+        self.bn= nn.BatchNorm2d(out_channels)
     
     def forward(self, input):
 
         retina_out = self.conv(input)
+        retina_out = self.bn(retina_out)
         retina_out = self.nonlnr(retina_out)
         
         return retina_out
@@ -205,10 +208,12 @@ class Layer_4(nn.Module):
 
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
         self.nonlnr = nn.ReLU()
+        self.bn= nn.BatchNorm2d(out_channels)
 
     def forward(self, input):
 
         l4_out = self.conv(input)
+        l4_out = self.bn(l4_out)
         l4_out = self.nonlnr(l4_out)
 
         return l4_out
@@ -253,7 +258,7 @@ if __name__ == '__main__':
 #     sim_mouse_net.make_SimMouseNet()
 #     sim_mouse_net.to('cuda')
         
-    out1, out2 = sim_mouse_net(mydata)
+    out = sim_mouse_net(mydata)
 
     print(time.time()-tic)
     

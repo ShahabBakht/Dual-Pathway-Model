@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 sys.path.append('../backbone')
-from select_backbone import select_resnet, select_mousenet
+from select_backbone import select_resnet, select_mousenet, select_simmousenet
 from convrnn import ConvGRU
 
 

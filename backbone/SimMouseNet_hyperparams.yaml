@@ -2,52 +2,52 @@ model:
     Retina:
         in_channels: 3
         out_channels: 32
-        kernel_size: 3
-        padding: 1
+        kernel_size: 5
+        padding: 2
     LGN:
-        out_channels: 5
-        kernel_size: 3
-        padding: 1
+        out_channels: 32
+        kernel_size: 5
+        padding: 2
     VISp:
         L4_out_channels: 32
-        L4_kernel_size: 3
-        L4_padding: 1
+        L4_kernel_size: 5
+        L4_padding: 2
         L2_3_kernel_size: 2
         L2_3_stride: 2
         L5_kernel_size: 1
-        L5_hidden_size: 20
+        L5_hidden_size: 64
     VISl:
         L4_out_channels: 32
-        L4_kernel_size: 3
-        L4_padding: 1
+        L4_kernel_size: 5
+        L4_padding: 2
         L2_3_kernel_size: 2
         L2_3_stride: 2
         L5_kernel_size: 1
-        L5_hidden_size: 20
+        L5_hidden_size: 64
     VISal:
         L4_out_channels: 32
-        L4_kernel_size: 3
-        L4_padding: 1
+        L4_kernel_size: 5
+        L4_padding: 2
         L2_3_kernel_size: 2
         L2_3_stride: 2
         L5_kernel_size: 1
-        L5_hidden_size: 20
+        L5_hidden_size: 64
     VISpm:
         L4_out_channels: 32
-        L4_kernel_size: 3
-        L4_padding: 1
+        L4_kernel_size: 5
+        L4_padding: 2
         L2_3_kernel_size: 2
         L2_3_stride: 2 
         L5_kernel_size: 1
-        L5_hidden_size: 20
+        L5_hidden_size: 64
     VISam:
         L4_out_channels: 32
-        L4_kernel_size: 3
-        L4_padding: 1
+        L4_kernel_size: 5
+        L4_padding: 2
         L2_3_kernel_size: 2
         L2_3_stride: 2
         L5_kernel_size: 1
-        L5_hidden_size: 20
+        L5_hidden_size: 64
     
 
 model_name: SimMouseNet
