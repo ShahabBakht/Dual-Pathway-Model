@@ -157,10 +157,12 @@ class Area(nn.Module):
         # to concatenate l4 and l2_3 output to feed to l5
         out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=2, stride=2)
         BNSL, C_l45, W_l45, H_l45 = out_l4_to_l5.shape
-        out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
+        # out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
+        out_l4_to_l5 = out_l4_to_l5.view((frames_per_block, BNSL//frames_per_block, C_l45, W_l45, H_l45)).contiguous().permute((1,0,2,3,4)).contiguous()
 
         BNSL, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
-        out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
+        # out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
+        out_l2_3_to_l5 = out_l2_3.view((frames_per_block, BNSL//frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous().permute((1,0,2,3,4)).contiguous()
         
         in_l5 = torch.cat((out_l4_to_l5,out_l2_3_to_l5),dim=2)
         out_l5 = self.L5(in_l5)
