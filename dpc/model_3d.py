@@ -22,7 +22,7 @@ class DPC_RNN(nn.Module):
         self.seq_len = seq_len
         self.pred_step = pred_step
         
-        if network == 'vgg' or network == 'mousenet':
+        if network == 'vgg' or network == 'mousenet' or network == 'simmousenet':
             self.last_duration = seq_len
         else:
             self.last_duration = int(math.ceil(seq_len / 4))
@@ -35,7 +35,7 @@ class DPC_RNN(nn.Module):
             self.pool_size = 2 # (2 for all readout, 4 for VISp5 readout)
         elif network == 'simmousenet':
             self.last_size = 16
-            self.pool_size = 2
+            self.pool_size = 1
         else:
             self.last_size = int(math.ceil(sample_size / 32))
             self.pool_size = 1
