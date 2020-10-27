@@ -82,6 +82,47 @@ class SimMouseNet(nn.Module):
 
     def forward(self, input):
         
+        Out2Agg, _ = self.get_img_features(input)
+#         BN, C, SL, W, H = input.shape
+#         input_tempflat = input.permute(0,2,1,3,4).contiguous().view((BN*SL,C,H,W)) 
+# #         print(input_tempflat.shape)
+# #         input_tempflat = input.view((B*N, C, W, H)).contiguous()
+
+#         Out = dict()
+#         for area in self.AREAS_LIST:
+
+#             if area == 'Retina':
+#                 Out[area] = self.Areas[area](input_tempflat)
+                
+#             elif area == 'LGN':
+                
+#                 Out[area] = self.Areas[area](Out['Retina'])
+                
+#             else:
+#                 predec_area = list(self.MouseGraph.G.predecessors(area))
+                
+#                 if area == 'VISp':
+#                     Out[area] = self.Areas[area](Out[predec_area[0]],SL)
+#                     BN, SL, C_, W_, H_ = Out[area][0].shape
+# #                     print(BN, SL, C_, W_, H_)
+#                     if area in self.OUTPUT_AREA_LIST:
+#                         Out_to_agg = torch.nn.functional.avg_pool2d(Out[area][0].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
+#                 else:
+
+#                     Out[area] = self.Areas[area](Out[predec_area[0]][1],SL)
+#                     if area in self.OUTPUT_AREA_LIST:
+#                         try:
+#                             Out_to_agg = torch.cat((Out_to_agg,Out[area][0]),dim=2)
+#                         except:
+#                             Out_to_agg = Out[area][0]
+
+        
+#         Out2Agg = Out_to_agg.permute(0,2,1,3,4).contiguous()
+        
+        return Out2Agg 
+    
+    def get_img_features(self, input):
+        
         BN, C, SL, W, H = input.shape
         input_tempflat = input.permute(0,2,1,3,4).contiguous().view((BN*SL,C,H,W)) 
 #         print(input_tempflat.shape)
@@ -101,24 +142,32 @@ class SimMouseNet(nn.Module):
                 predec_area = list(self.MouseGraph.G.predecessors(area))
                 
                 if area == 'VISp':
-                    Out[area] = self.Areas[area](Out[predec_area[0]],SL)
-                    BN, SL, C_, W_, H_ = Out[area][0].shape
+                    this_Out = self.Areas[area](Out[predec_area[0]],SL)
+                    Out[area+'_L4'] = this_Out[2]
+                    Out[area+'_L2_3'] = this_Out[1]
+                    Out[area+'_L5'] = this_Out[0]
+                    BN, SL, C_, W_, H_ = Out[area+'_L5'].shape
 #                     print(BN, SL, C_, W_, H_)
                     if area in self.OUTPUT_AREA_LIST:
-                        Out_to_agg = torch.nn.functional.avg_pool2d(Out[area][0].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
+                        Out_to_agg = torch.nn.functional.avg_pool2d(Out[area+'_L5'].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
                 else:
 
-                    Out[area] = self.Areas[area](Out[predec_area[0]][1],SL)
+                    this_Out = self.Areas[area](Out[predec_area[0]+'_L2_3'],SL)
+                    Out[area+'_L4'] = this_Out[2]
+                    Out[area+'_L2_3'] = this_Out[1]
+                    Out[area+'_L5'] = this_Out[0]
+                    
                     if area in self.OUTPUT_AREA_LIST:
                         try:
-                            Out_to_agg = torch.cat((Out_to_agg,Out[area][0]),dim=2)
+                            Out_to_agg = torch.cat((Out_to_agg,Out[area+'_L5']),dim=2)
                         except:
-                            Out_to_agg = Out[area][0]
+                            Out_to_agg = Out[area+'_L5']
 
         
         Out2Agg = Out_to_agg.permute(0,2,1,3,4).contiguous()
         
-        return Out2Agg #Out, 
+        return Out2Agg, Out
+    
                 
                 
     def _initialize_weights(self):
@@ -157,17 +206,17 @@ class Area(nn.Module):
         # to concatenate l4 and l2_3 output to feed to l5
         out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=2, stride=2)
         BNSL, C_l45, W_l45, H_l45 = out_l4_to_l5.shape
-        # out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
-        out_l4_to_l5 = out_l4_to_l5.view((frames_per_block, BNSL//frames_per_block, C_l45, W_l45, H_l45)).contiguous().permute((1,0,2,3,4)).contiguous()
+        out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
+        #out_l4_to_l5 = out_l4_to_l5.view((frames_per_block, BNSL//frames_per_block, C_l45, W_l45, H_l45)).contiguous().permute((1,0,2,3,4)).contiguous()
 
         BNSL, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
-        # out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
-        out_l2_3_to_l5 = out_l2_3.view((frames_per_block, BNSL//frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous().permute((1,0,2,3,4)).contiguous()
+        out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
+        #out_l2_3_to_l5 = out_l2_3.view((frames_per_block, BNSL//frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous().permute((1,0,2,3,4)).contiguous()
         
         in_l5 = torch.cat((out_l4_to_l5,out_l2_3_to_l5),dim=2)
         out_l5 = self.L5(in_l5)
         
-        return out_l5, out_l2_3
+        return out_l5, out_l2_3, out_l4
 
         
 
@@ -260,7 +309,8 @@ if __name__ == '__main__':
 #     sim_mouse_net.make_SimMouseNet()
 #     sim_mouse_net.to('cuda')
         
-    out = sim_mouse_net(mydata)
+#     agg_out, out = sim_mouse_net.get_img_features(mydata)
+    agg_out = sim_mouse_net(mydata)
 
     print(time.time()-tic)
     
