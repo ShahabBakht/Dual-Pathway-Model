@@ -142,6 +142,7 @@ class SimMouseNet(nn.Module):
                 predec_area = list(self.MouseGraph.G.predecessors(area))
                 
                 if area == 'VISp':
+#                     ipdb.set_trace()
                     this_Out = self.Areas[area](Out[predec_area[0]],SL)
                     Out[area+'_L4'] = this_Out[2]
                     Out[area+'_L2_3'] = this_Out[1]
@@ -257,13 +258,16 @@ class Layer_4(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size = 3, padding = 1):
         super(Layer_4, self).__init__()
 
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
+        self.conv_1 = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
+        self.conv_2 = nn.Conv2d(out_channels, out_channels, kernel_size = kernel_size, padding = padding)
         self.nonlnr = nn.ReLU()
         self.bn= nn.BatchNorm2d(out_channels)
 
     def forward(self, input):
 
-        l4_out = self.conv(input)
+        l4_out = self.conv_1(input)
+        l4_out = self.bn(l4_out)
+        l4_out = self.conv_2(l4_out)
         l4_out = self.bn(l4_out)
         l4_out = self.nonlnr(l4_out)
 
