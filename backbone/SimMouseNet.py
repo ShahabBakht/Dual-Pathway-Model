@@ -65,7 +65,7 @@ class SimMouseNet(nn.Module):
                     this_area_in_channels = self.hyperparams['model'][predec_area[0]]['out_channels']
                 
                 else:
-                    this_area_in_channels = self.hyperparams['model'][predec_area[0]]['L4_out_channels']
+                    this_area_in_channels = self.hyperparams['model'][predec_area[0]]['L5_hidden_size'] #self.hyperparams['model'][predec_area[0]]['L4_out_channels']
                     
                     
                 self.Areas[area] = Area(L4_in_channels = this_area_in_channels, 
@@ -144,6 +144,7 @@ class SimMouseNet(nn.Module):
                 if area == 'VISp':
 #                     ipdb.set_trace()
                     this_Out = self.Areas[area](Out[predec_area[0]],SL)
+    
                     Out[area+'_L4'] = this_Out[2]
                     Out[area+'_L2_3'] = this_Out[1]
                     Out[area+'_L5'] = this_Out[0]
@@ -152,8 +153,10 @@ class SimMouseNet(nn.Module):
                     if area in self.OUTPUT_AREA_LIST:
                         Out_to_agg = torch.nn.functional.avg_pool2d(Out[area+'_L5'].view((BN*SL, C_, W_, H_)), kernel_size=2, stride=2).contiguous().view((BN,SL,C_, W_//2, H_//2)).contiguous()
                 else:
-
-                    this_Out = self.Areas[area](Out[predec_area[0]+'_L2_3'],SL)
+                    L2_3_out_shape = Out[predec_area[0]+'_L2_3'].shape
+                    this_Out = self.Areas[area](Out[predec_area[0]+'_L2_3'].view((L2_3_out_shape[0]*L2_3_out_shape[1],L2_3_out_shape[2],L2_3_out_shape[3],L2_3_out_shape[4])),SL)
+#                     this_Out = self.Areas[area](Out[predec_area[0]+'_L2_3'],SL)
+                    
                     Out[area+'_L4'] = this_Out[2]
                     Out[area+'_L2_3'] = this_Out[1]
                     Out[area+'_L5'] = this_Out[0]
@@ -193,31 +196,33 @@ class Area(nn.Module):
                 ):
         super(Area, self).__init__()
 
-        self.L4 = Layer_4(in_channels = L4_in_channels, out_channels = L4_out_channels)
+        self.L4 = Layer_4(in_channels = L4_in_channels, out_channels = L4_out_channels, kernel_size = L4_kernel_size, padding = L4_padding)
         self.L2_3 = Layer_2_3(kernel_size = L2_3_kernel_size, stride = L2_3_stride)
-        self.L5 = Layer_5(input_size = 2*L4_out_channels, kernel_size = L5_kernel_size, hidden_size = L5_hidden_size)
+        self.L5 = Layer_5(input_size = 1*L4_out_channels, kernel_size = L5_kernel_size, hidden_size = L5_hidden_size)
 
 
     def forward(self, input,frames_per_block):
         
         
         out_l4 = self.L4(input)
-        out_l2_3 = self.L2_3(out_l4)
+#         out_l2_3 = self.L2_3(out_l4)
         
         # to concatenate l4 and l2_3 output to feed to l5
-        out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=out_l4.shape[2]//out_l2_3.shape[2], stride=out_l4.shape[2]//out_l2_3.shape[2])
-        BNSL, C_l45, W_l45, H_l45 = out_l4_to_l5.shape
-        out_l4_to_l5 = out_l4_to_l5.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
+#         out_l4_to_l5 = nn.functional.avg_pool2d(out_l4, kernel_size=out_l4.shape[2]//out_l2_3.shape[2], stride=out_l4.shape[2]//out_l2_3.shape[2])
+
+        BNSL, C_l45, W_l45, H_l45 = out_l4.shape
+        out_l4_to_l5 = out_l4.view((BNSL//frames_per_block,frames_per_block, C_l45, W_l45, H_l45)).contiguous()
         #out_l4_to_l5 = out_l4_to_l5.view((frames_per_block, BNSL//frames_per_block, C_l45, W_l45, H_l45)).contiguous().permute((1,0,2,3,4)).contiguous()
 
-        BNSL, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
-        out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
+#         BNSL, C_l2_3, W_l2_3, H_l2_3 = out_l2_3.shape
+#         out_l2_3_to_l5 = out_l2_3.view((BNSL//frames_per_block, frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous()
         #out_l2_3_to_l5 = out_l2_3.view((frames_per_block, BNSL//frames_per_block, C_l2_3, W_l2_3, H_l2_3)).contiguous().permute((1,0,2,3,4)).contiguous()
         
-        in_l5 = torch.cat((out_l4_to_l5,out_l2_3_to_l5),dim=2)
+#         in_l5 = torch.cat((out_l4_to_l5,out_l2_3_to_l5),dim=2)
+        in_l5 = out_l4_to_l5
         out_l5 = self.L5(in_l5)
-#         print(out_l5.shape,out_l2_3.shape, out_l4.shape )
-        
+        out_l2_3 = out_l5 #self.L2_3(out_l5)
+#         print(out_l5.shape)
         return out_l5, out_l2_3, out_l4
 
         
@@ -264,7 +269,7 @@ class Layer_4(nn.Module):
         self.bn1 = nn.BatchNorm2d(out_channels)
         self.conv_2 = nn.Conv2d(out_channels, out_channels * self.scale, kernel_size = 1)
         self.bn2 = nn.BatchNorm2d(out_channels * self.scale)
-        self.conv_3 = nn.Conv2d(out_channels * self.scale, out_channels * self.scale, kernel_size = kernel_size, padding = padding)
+        self.conv_3 = nn.Conv2d(out_channels * self.scale, out_channels * self.scale, kernel_size = kernel_size, padding = padding, stride = 2) # if maxpool at the output of L4, strid --> 1
         self.bn3 = nn.BatchNorm2d(out_channels * self.scale)
         self.conv_4 = nn.Conv2d(out_channels * self.scale, out_channels, kernel_size = 1)
 #         self.conv_1 = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
@@ -273,33 +278,40 @@ class Layer_4(nn.Module):
 #         self.conv_4 = nn.Conv2d(out_channels, out_channels, kernel_size = kernel_size, padding = padding)
         self.nonlnr = nn.ReLU()
         self.bn4= nn.BatchNorm2d(out_channels)
+        
+        # adding maxpool to L4 output
+#         self.maxpool = nn.MaxPool2d(kernel_size = 2, stride = 2)
 
     def forward(self, input):
 
-        l4_out = self.conv_1(input)
-        l4_out = self.bn1(l4_out)
+        l4_out_1 = self.conv_1(input)
+        l4_out = self.bn1(l4_out_1)
         l4_out = self.nonlnr(l4_out)
-        l4_out = self.conv_2(l4_out)
-        l4_out = self.bn2(l4_out)
+        l4_out_2 = self.conv_2(l4_out)
+        l4_out = self.bn2(l4_out_2)
         l4_out = self.nonlnr(l4_out)
-        l4_out = self.conv_3(l4_out)
-        l4_out = self.bn3(l4_out)
+        l4_out_3 = self.conv_3(l4_out)
+        l4_out = self.bn3(l4_out_3)
         l4_out = self.nonlnr(l4_out)
-        l4_out = self.conv_4(l4_out)
-        l4_out = self.bn4(l4_out)
+        l4_out_4 = self.conv_4(l4_out)
+        l4_out = self.bn4(l4_out_4)
         l4_out = self.nonlnr(l4_out)
-
+        
+        # passing L4 output through a maxpool
+#         l4_out = self.maxpool(l4_out)
+        
         return l4_out
 
 class Layer_2_3(nn.Module):
     def __init__(self, kernel_size = 2, stride = 2):
         super(Layer_2_3, self).__init__()
 
-        self.maxpool = nn.MaxPool2d(kernel_size = kernel_size, stride = stride)
+#         self.maxpool = nn.MaxPool2d(kernel_size = kernel_size, stride = stride)
 
     def forward(self, input):
-
-        l2_3_out = self.maxpool(input)
+        B, N, C, W, H = input.shape
+        l2_3_out = input.view((B*N,C,W,H))
+#         l2_3_out = self.maxpool(input)
         
         return l2_3_out
 
@@ -340,9 +352,9 @@ class Layer_5(nn.Module):
 if __name__ == '__main__':
     
     import time
-    import ipdb
+#     import ipdb
     
-    mydata = torch.FloatTensor(10, 3, 5, 128, 128).to('cuda')
+    mydata = torch.FloatTensor(10, 3, 5, 64, 64).to('cuda')
 #     mydata = torch.FloatTensor(10, 3, 128, 128)
 #     mydata = mydata.permute(0,2,1,3,4).contiguous().view((64,3,128,128))
     nn.init.normal_(mydata)
@@ -356,5 +368,4 @@ if __name__ == '__main__':
     agg_out = sim_mouse_net(mydata)
 
     print(time.time()-tic)
-    
-    ipdb.set_trace()
+#     ipdb.set_trace()

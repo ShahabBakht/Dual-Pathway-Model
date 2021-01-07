@@ -64,7 +64,7 @@ def select_simmousenet():
     model = SimMouseNet()
     param['output_area_list'] = model.OUTPUT_AREA_LIST
     
-    param['feature_size'] = 320 
+    param['feature_size'] = 256 #96 #160 #160 #256 #
 
     # TO DO: make feature_size calculation automatic
     

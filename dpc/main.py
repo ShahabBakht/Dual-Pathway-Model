@@ -50,8 +50,8 @@ parser.add_argument('--img_dim', default=128, type=int)
 parser.add_argument('--save_checkpoint_freq', default=10, type=int)
 
 def main():
-    torch.manual_seed(10)
-    np.random.seed(10)
+    torch.manual_seed(20)
+    np.random.seed(20)
     global args; args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
     
