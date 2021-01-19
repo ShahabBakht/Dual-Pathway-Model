@@ -1,0 +1,15 @@
+model_id level_of_detail
+sON_TF8 filter
+sON_TF4 filter
+sON_TF1 filter
+sON_TF2 filter
+sONsOFF_001 filter
+tOFF_TF15 filter
+sOFF_TF15 filter
+sONtOFF_001 filter
+tOFF_TF8 filter
+tOFF_TF4 filter
+sOFF_TF1 filter
+sOFF_TF2 filter
+sOFF_TF4 filter
+sOFF_TF8 filter

@@ -59,9 +59,9 @@ def select_mousenet():
     
     return model, param
 
-def select_simmousenet():
+def select_simmousenet(hp):
     param = {'feature_size': None}
-    model = SimMouseNet()
+    model = SimMouseNet(hyperparam_loc=hp)
     param['output_area_list'] = model.OUTPUT_AREA_LIST
     
     param['feature_size'] = 256 #96 #160 #160 #256 #

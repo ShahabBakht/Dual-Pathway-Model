@@ -13,7 +13,7 @@ from convrnn import ConvGRU
 
 class DPC_RNN(nn.Module):
     '''DPC with RNN'''
-    def __init__(self, sample_size, num_seq=8, seq_len=5, pred_step=3, network='resnet50'):
+    def __init__(self, sample_size, num_seq=8, seq_len=5, pred_step=3, network='resnet50', hp='./SimMouseNet_hyperparams.yaml'):
         super(DPC_RNN, self).__init__()
         torch.cuda.manual_seed(233) #233
         print('Using DPC-RNN model')
@@ -45,7 +45,7 @@ class DPC_RNN(nn.Module):
         if network == 'mousenet':
             self.backbone, self.param = select_mousenet()
         elif network == 'simmousenet':
-            self.backbone, self.param = select_simmousenet()
+            self.backbone, self.param = select_simmousenet(hp)
         else:
             self.backbone, self.param = select_resnet(network, track_running_stats=False)
             

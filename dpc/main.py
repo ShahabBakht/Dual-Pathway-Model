@@ -7,6 +7,8 @@ import numpy as np
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
+import wandb
+import yaml
 plt.switch_backend('agg')
 
 sys.path.append('../utils')
@@ -48,12 +50,15 @@ parser.add_argument('--prefix', default='tmp', type=str, help='prefix of checkpo
 parser.add_argument('--train_what', default='all', type=str)
 parser.add_argument('--img_dim', default=128, type=int)
 parser.add_argument('--save_checkpoint_freq', default=10, type=int)
+parser.add_argument('--hyperparameter_file', default='./SimMouseNet_hyperparams.yaml', type=str, help='the hyperparameter yaml file for SimMouseNet')
+parser.add_argument('--wandb', default=True, action='store_true')
 
 def main():
     torch.manual_seed(20)
     np.random.seed(20)
     global args; args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
+    
     
     # global cuda; cuda = torch.device('cuda') # uncomment this if only gpu
     # added by Shahab
@@ -70,14 +75,19 @@ def main():
                         num_seq=args.num_seq, 
                         seq_len=args.seq_len, 
                         network=args.net, 
-                        pred_step=args.pred_step)
+                        pred_step=args.pred_step,
+                        hp = args.hyperparameter_file)
     else: raise ValueError('wrong model!')
 
     model = nn.DataParallel(model)
     model = model.to(cuda)
     global criterion; criterion = nn.CrossEntropyLoss()
     global temperature; temperature = 1
-
+    
+    if args.wandb:
+        wandb.init(f"CPC {args.prefix}",config=args)
+        wandb.watch(model)
+    
     ### optimizer ###
     if args.train_what == 'last':
         for name, param in model.module.resnet.named_parameters():
@@ -194,7 +204,13 @@ def main():
         train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch)
         
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch)
-                
+        
+        wandb.log({"epoch": epoch, 
+                   "train loss": train_loss,
+                   "train accuracy top1":train_accuracy_list[0], 
+                   "val loss": val_loss,
+                   "val accuracy top1": val_accuracy_list[0]})
+        
         # save curve
         writer_train.add_scalar('global/loss', train_loss, epoch)
         writer_train.add_scalar('global/accuracy', train_acc, epoch)
@@ -293,7 +309,6 @@ def train(data_loader, model, optimizer, epoch):
                   'Loss {loss.val:.6f} ({loss.local_avg:.4f})\t'
                   'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
                    epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic,loss=losses))
-
             writer_train.add_scalar('local/loss', losses.val, iteration)
             writer_train.add_scalar('local/accuracy', accuracy.val, iteration)
 

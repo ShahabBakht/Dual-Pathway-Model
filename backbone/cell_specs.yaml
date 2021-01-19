@@ -1,0 +1,31 @@
+cell_types: !!python/tuple
+  - 'sON_TF1'
+  - 'sON_TF2'
+  - 'sON_TF4'
+  - 'sON_TF8'
+  - 'sOFF_TF1'
+  - 'sOFF_TF2'
+  - 'sOFF_TF4'
+  - 'sOFF_TF8'
+  - 'sOFF_TF15'
+  - 'tOFF_TF4'
+  - 'tOFF_TF8'
+  - 'tOFF_TF15'
+#   - 'sONsOFF_001'
+#   - 'sONtOFF_001'
+  
+num_cells: !!python/tuple
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+#   - 1
+#   - 1
