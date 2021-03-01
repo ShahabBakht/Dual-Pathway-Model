@@ -11,9 +11,25 @@ import pandas as pd
 import numpy as np
 import cv2
 sys.path.append('../utils')
+
 from augmentation import *
 from tqdm import tqdm
 from joblib import Parallel, delayed
+import collections
+import datetime
+import hashlib
+import matplotlib
+import matplotlib.image
+import pandas as pd
+from pathlib import Path
+import requests
+import struct
+import subprocess
+import tables
+import h5py
+from PIL import Image
+import tempfile
+
 
 def pil_loader(path):
     with open(path, 'rb') as f:
@@ -331,4 +347,156 @@ class UCF101_3d(data.Dataset):
         '''give action code, return action name'''
         return self.action_dict_decode[action_code]
 
-                
+cache = {10: {}, 40: {}}
+
+nclasses = 72  # 5 degree precision in heading discrimination.
+max_speed = 3  # Max 3 m/s movement
+
+
+def to_class(theta):
+    theta = theta % (2 * np.pi)
+    return int(theta / (2 * np.pi) * nclasses)
+
+
+def to_linear_class(speed, maxspeed):
+    return int(speed / maxspeed * nclasses)
+
+
+class AirSim(torch.utils.data.Dataset):
+    """
+    Loads a segment from the Airsim flythrough data.
+    """
+
+    def __init__(self, root="./airsim", split="train", regression=True, nt=40, seq_len=5, num_seq=8, transform = None, return_label=False):
+
+        if split not in ("train", "tune", "val", "report", "traintune"):
+            raise NotImplementedError("Split is set to an unknown value")
+
+        assert nt in (10, 40)
+        assert nt == seq_len * num_seq
+        
+        self.return_label = return_label
+        self.split = split
+        self.root = root
+        
+        cells = []
+        for item in Path(root).glob("*/*/*.h5"):
+            if ('output.h5' in str(item)) and ("2021-02-03T035302" not in str(item)) and ("2021-02-04T104447" not in str(item)) and ("mountains" not in str(item)):
+                cells.append(item)
+
+        cells = sorted(cells)
+            
+        splits = {
+            "train": [0, 1, 2, 3, 5, 6, 7, 8],
+            "tune": [4],
+            "val": [4],
+            "report": [9],
+            "traintune": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        }
+        nblocks = 10
+        sequence = []
+        i = 0
+        for cell in cells:
+            f = tables.open_file(cell, "r")
+            labels = f.get_node("/labels")[:]
+            f.close()
+            cell_path, _ = os.path.split(cell)
+            for j in range(labels.shape[0]):
+                tensor_path = os.path.join(cell_path,'split',f'{j}.h5')            
+                if (j % nblocks) in splits[split]:
+                    if regression:
+                        # Outputs appropriate for regression
+                        sequence.append(
+                            {
+                                "images_path": cell,
+                                "tensor_path": tensor_path,
+                                "labels": np.array(
+                                        [
+                                            labels[j]["heading_pitch"],
+                                            labels[j]["heading_yaw"],
+                                            labels[j]["rotation_pitch"],
+                                            labels[j]["rotation_yaw"],
+                                            labels[j]["speed"],
+                                        ],
+                                        dtype=np.float32,
+                                    ),
+                                "idx": j,
+                            }
+                        )
+                    else:
+                        # Outputs appropriate for multi-class
+                        hp = to_class(labels[j]["heading_pitch"])
+                        hy = to_class(labels[j]["heading_yaw"])
+                        rp = to_class(labels[j]["rotation_pitch"])
+                        ry = to_class(labels[j]["rotation_yaw"])
+
+                            # TODO(pmin): make max_speed not hard-coded.
+                        speed = to_linear_class(labels[i]["speed"], max_speed)
+
+                        sequence.append(
+                                {
+                                    "images_path": cell,
+                                    "labels": np.array(
+                                        [hp, hy, rp, ry, speed], dtype=np.int64
+                                    ),  # Torch requires long ints
+                                    "idx": j,
+                                }
+                            )
+                        
+        if regression:
+            self.noutputs = 5
+            self.nclasses = 1
+        else:
+            self.noutputs = 5
+            self.nclasses = nclasses
+
+        self.sequence = sequence
+        self.nt = nt
+        self.num_seq = num_seq
+        self.seq_len = seq_len
+        self.transform = transform
+        
+        if len(self.sequence) == 0:
+            raise Exception("Didn't find any data")
+
+    def __getitem__(self, idx):
+        # Load a single segment of length idx from disk.
+#         global cache
+        tgt = self.sequence[idx]
+        tensor_path = tgt["tensor_path"]
+        f = tables.open_file(tensor_path, "r")
+        X_ = f.get_node("/videos")[:].squeeze()
+        f.close()
+#         return (X_.transpose((1, 0, 2, 3)), tgt["labels"])
+#         if tgt["images_path"] not in cache:
+#             f = tables.open_file(tgt["images_path"], "r")
+#             if self.nt == 40:
+#                 X_ = f.get_node("/videos")[:].squeeze()
+#             else:
+#                 X_ = f.get_node("/short_videos")[:].squeeze()
+
+#             f.close()
+
+#             cache[self.nt][tgt["images_path"]] = X_
+            
+#         X_ = cache[self.nt][tgt["images_path"]]
+#         X_ = X_[tgt["idx"], :].astype(np.uint8)
+
+#         return (X_.transpose((1, 0, 2, 3)), tgt["labels"])
+        seq = [Image.fromarray(np.uint8(X_[i,:,:,:]).transpose(1,2,0)) for i in range(self.nt)]
+        t_seq = self.transform(seq)
+        del X_, seq
+        t_seq = torch.stack(t_seq, 0)
+        
+        t_seq = t_seq.view(self.num_seq, self.seq_len, *t_seq.shape[1:4]).transpose(1,2)
+        
+#         # The images are natively different sizes, grayscale.
+        if self.return_label:
+            return (t_seq, tgt["labels"])
+        
+        return t_seq
+
+    def __len__(self):
+        # Returns the length of a dataset
+        return len(self.sequence)
+    

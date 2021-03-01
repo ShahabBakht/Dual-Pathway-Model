@@ -113,6 +113,12 @@ def main():
     global iteration; iteration = 0
 
     ### restart training ###
+    global img_path; img_path, model_path = set_path(args)
+    if os.path.exists(os.path.join(img_path,'last.pth.tar')):
+        args.resume = os.path.join(img_path,'last.pth.tar')
+    else:
+        pass
+    
     if args.resume:
         if os.path.isfile(args.resume):
             args.old_lr = float(re.search('_lr(.+?)_', args.resume).group(1))
@@ -128,7 +134,7 @@ def main():
             print("=> loaded resumed checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
         else:
             print("[Warning] no checkpoint found at '{}'".format(args.resume))
-
+    
     if args.pretrain:
         if os.path.isfile(args.pretrain):
             print("=> loading pretrained checkpoint '{}'".format(args.pretrain))
@@ -171,13 +177,27 @@ def main():
             ToTensor(),
             Normalize()
         ])
+        
+    elif args.dataset == 'airsim':
+        transform = transforms.Compose([
+            #RandomHorizontalFlip(consistent=True),
+            #RandomCrop(size=112, consistent=True),
+            #ThreedGaussianBlur(5),
+            #Normalize(123.0, 75.0),
+            #ThreedExposure(.3, .3),
+            Scale(size=(args.img_dim,args.img_dim)),
+            #RandomGray(consistent=False, p=0.5),
+            #ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
+            ToTensor(),
+            Normalize()
+        ])
 
     train_loader = get_data(transform, 'train')
     val_loader = get_data(transform, 'val')
 
     # setup tools
     global de_normalize; de_normalize = denorm()
-    global img_path; img_path, model_path = set_path(args)
+    
     global writer_train
     try: # old version
         writer_val = SummaryWriter(log_dir=os.path.join(img_path, 'val'))
@@ -222,9 +242,9 @@ def main():
         writer_val.add_scalar('accuracy/top1', val_accuracy_list[0], epoch)
         writer_val.add_scalar('accuracy/top3', val_accuracy_list[1], epoch)
         writer_val.add_scalar('accuracy/top5', val_accuracy_list[2], epoch)
-        for name, param in model.named_parameters():
-            if ('bn' not in name) and (param.requires_grad) and ("bias" not in name):            
-                writer_train.add_scalar(name, param.grad.abs().mean(), epoch)#.abs()
+#         for name, param in model.named_parameters():
+#             if ('bn' not in name) and (param.requires_grad) and ("bias" not in name):            
+#                 writer_train.add_scalar(name, param.grad.abs().mean(), epoch)#.abs()
 
         # save check_point
         is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
@@ -240,7 +260,14 @@ def main():
                          'optimizer': optimizer.state_dict(),
                          'iteration': iteration}, 
                          is_best, filename=os.path.join(model_path, 'epoch%s.pth.tar' % str(epoch+1)), keep_all=save_this)
-
+        save_checkpoint({'epoch': epoch+1,
+                         'net': args.net,
+                         'state_dict': model.state_dict(),
+                         'best_acc': best_acc,
+                         'optimizer': optimizer.state_dict(),
+                         'iteration': iteration}, 
+                         is_best, filename=os.path.join(model_path, 'last.pth.tar'), keep_all=save_this)
+        
     print('Training from ep %d to ep %d finished' % (args.start_epoch, args.epochs))
 
 def process_output(mask):
@@ -376,6 +403,15 @@ def get_data(transform, mode='train'):
                          seq_len=args.seq_len,
                          num_seq=args.num_seq,
                          downsample=args.ds)
+    elif args.dataset == 'airsim':
+        airsim_root = os.path.join(os.getenv('SLURM_TMPDIR'),'airsim')
+        dataset = AirSim(root=airsim_root, 
+                         split=mode, 
+                         regression=True, 
+                         nt=40, 
+                         seq_len=5, 
+                         num_seq=8, 
+                         transform = transform)
     else:
         raise ValueError('dataset not supported')
 

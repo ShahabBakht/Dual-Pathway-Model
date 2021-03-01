@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import pandas as pd
 
-sys.path.append('../bmtk')
+sys.path.append('/home/mila/b/bakhtias/Project-Codes/bmtk')
 from bmtk.simulator.filternet.lgnmodel.temporalfilter import TemporalFilterCosineBump
 from bmtk.simulator.filternet.lgnmodel.spatialfilter import GaussianSpatialFilter
 from bmtk.simulator.filternet.lgnmodel.linearfilter import SpatioTemporalFilter
@@ -150,6 +150,7 @@ class Conv3dLGN_layer(nn.Module):
                 self.Convs[cell_type+'_dom'] = Conv3dLGN(in_channels=in_channels, out_channels=num_cells, kernel_size=kernel_size, cell_type=cell_type)
             else:
                 self.Convs[cell_type+'_dom_nondom'] = Conv3dLGN(in_channels=in_channels, out_channels=num_cells, kernel_size=kernel_size, cell_type=cell_type, conv_type='dom_nondom')
+
         self.ReLU = nn.ReLU()
 
     def forward(self, x):
@@ -171,12 +172,12 @@ if  __name__ == "__main__":
     import time
     import wandb
 
-    data = np.load('allen_movie_one.npy').astype('float64')
-    data_norm = ((data * 2) - np.max(data)) / np.max(data)
-    print(data.shape,np.max(data_norm),np.min(data_norm))
+#     data = np.load('allen_movie_one.npy').astype('float64')
+#     data_norm = ((data * 2) - np.max(data)) / np.max(data)
+#     print(data.shape,np.max(data_norm),np.min(data_norm))
     
     wandb.init(project="test-convLGN")
-    kernel_size = (11,11,11)
+    kernel_size = (5,5,5)
     wandb.config.kernel_sizes = kernel_size
     
     t0 = time.time()
@@ -186,10 +187,10 @@ if  __name__ == "__main__":
     LGN_layer = Conv3dLGN_layer(in_channels=3, kernel_size= kernel_size)
     LGN_layer = LGN_layer.to(cuda)
     t1 = time.time()
-    x = torch.Tensor(data[::1,:,:]).unsqueeze_(0).unsqueeze_(0).repeat([1,3,1,1,1]).to(cuda)
+#     x = torch.Tensor(data[::1,:,:]).unsqueeze_(0).unsqueeze_(0).repeat([1,3,1,1,1]).to(cuda)
 #     x = torch.rand((1, 3, 20, 64, 64)).to('cuda')
 #     x = torch.Tensor(data[::30,:,:]).view((1,1,*data.shape)).to('cuda')
-    out = LGN_layer(x).detach().numpy()
+#     out = LGN_layer(x).detach().numpy()
     t2 = time.time()
     
     print(LGN_layer.cell_types) 
@@ -199,7 +200,7 @@ if  __name__ == "__main__":
             I = LGN_layer.Convs[f"{cell}_dom"].weight[0,0,i,:,:].detach().cpu().numpy()
             wandb.log({f"spatial kernel {cell}" : [wandb.Image(I)]})
         
-        T = LGN_layer.Convs[f"{cell}_dom"].weight[0,0,:,5,5].detach().cpu().numpy()
+        T = LGN_layer.Convs[f"{cell}_dom"].weight[0,0,:,kernel_size[0]//2,kernel_size[0]//2].detach().cpu().numpy()
         data = [[x, y] for (x, y) in zip(np.arange(len(T)), T)]
         table = wandb.Table(data=data, columns = ["x", "y"])
         wandb.log({f"temporal kernel {cell}" : wandb.plot.line(table, "x", "y", title=cell)})

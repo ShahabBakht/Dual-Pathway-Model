@@ -15,6 +15,7 @@ def save_checkpoint(state, is_best=0, gap=1, filename='models/checkpoint.pth.tar
     torch.save(state, filename)
     last_epoch_path = os.path.join(os.path.dirname(filename),
                                    'epoch%s.pth.tar' % str(state['epoch']-gap))
+    
     if not keep_all:
         try: os.remove(last_epoch_path)
         except: pass
@@ -50,7 +51,7 @@ def calc_topk_accuracy(output, target, topk=(1,)):
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
+        correct_k = correct[:k].contiguous().view(-1).float().sum(0)
         res.append(correct_k.mul_(1 / batch_size))
     return res
 

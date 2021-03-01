@@ -9,7 +9,7 @@ import yaml
 from SimMouseNet_network import Network
 from convrnn import ConvGRU
 sys.path.append('/home/mila/b/bakhtias/Project-Codes/bmtk')
-from LGN import Conv3dLGN_layer
+from LGN import Conv3dLGN_layer, Conv3dLGN
 
 
 
@@ -179,7 +179,7 @@ class SimMouseNet(nn.Module):
                 
     def _initialize_weights(self):
         for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv3d):
+            if (isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv3d)) and not isinstance(m, Conv3dLGN):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
@@ -250,18 +250,18 @@ class Retina(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size = 3, padding = 1):
         super(Retina, self).__init__()
 
-#         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
-#         self.conv = nn.Conv3d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
-        self.conv = Conv3dLGN_layer(in_channels = in_channels, kernel_size = (kernel_size,kernel_size,kernel_size))
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
+        #self.conv = nn.Conv3d(in_channels, out_channels, kernel_size = kernel_size, padding = padding)
+#         self.conv = Conv3dLGN_layer(in_channels = in_channels, kernel_size = (kernel_size,kernel_size,kernel_size))
         self.nonlnr = nn.ReLU()
-        self.bn= nn.BatchNorm3d(out_channels)
+        self.bn= nn.BatchNorm2d(out_channels)
     
     def forward(self, input, frames_per_block):
 
         if isinstance(self.conv, nn.Conv3d) or isinstance(self.conv, Conv3dLGN_layer):
             BNSL,C,H,W = input.shape
             input = input.view((BNSL//frames_per_block,frames_per_block,C,H,W)).contiguous().permute(0,2,1,3,4)
-            
+        
         retina_out = self.conv(input)
         retina_out = self.bn(retina_out)
         retina_out = self.nonlnr(retina_out)
@@ -363,15 +363,28 @@ class Layer_5(nn.Module):
 if __name__ == '__main__':
     
     import time
-#     import ipdb
-    
-    mydata = torch.FloatTensor(10, 3, 11, 64, 64).to('cuda')
+    import wandb
+    import numpy as np
+#     wandb.init(project="test-simmousenet+convLGN")
+    mydata = torch.FloatTensor(8, 3, 5, 64, 64).to('cuda')
     nn.init.normal_(mydata)
     
     tic = time.time()
     sim_mouse_net = SimMouseNet(hyperparam_loc='/home/mila/b/bakhtias/Project-Codes/CPC/backbone/SimMouseNet_hyperparams.yaml').to('cuda')
+#     for f in list(sim_mouse_net.Areas.Retina.conv.Convs.keys()):
+#         w = sim_mouse_net.Areas.Retina.conv.Convs[f].weight
+        
+#         for i in range(w.shape[2]):
+#             I = w[0,0,i,:,:].detach().cpu().numpy()
+#             wandb.log({f"spatial kernel {f}" : [wandb.Image(I)]})
+        
+#         T = w[0,0,:,5,5].detach().cpu().numpy()
+#         data = [[x, y] for (x, y) in zip(np.arange(len(T)), T)]
+#         table = wandb.Table(data=data, columns = ["x", "y"])
+#         wandb.log({f"temporal kernel {f}" : wandb.plot.line(table, "x", "y", title=f)})
         
     agg_out = sim_mouse_net(mydata)
+    print(agg_out.shape)
 
     print(time.time()-tic)
 #     ipdb.set_trace()

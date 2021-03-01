@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 sys.path.append('../backbone')
-from select_backbone import select_resnet, select_mousenet, select_simmousenet
+from select_backbone import select_resnet, select_mousenet, select_simmousenet, select_monkeynet
 from convrnn import ConvGRU
 
 
@@ -22,7 +22,7 @@ class DPC_RNN(nn.Module):
         self.seq_len = seq_len
         self.pred_step = pred_step
         
-        if network == 'vgg' or network == 'mousenet' or network == 'simmousenet':
+        if network == 'vgg' or network == 'mousenet' or network == 'simmousenet' or network == 'monkeynet':
             self.last_duration = seq_len
         else:
             self.last_duration = int(math.ceil(seq_len / 4))
@@ -36,6 +36,9 @@ class DPC_RNN(nn.Module):
         elif network == 'simmousenet':
             self.last_size = 16
             self.pool_size = 1
+        elif network == 'monkeynet':
+            self.last_size = 16
+            self.pool_size = 1
         else:
             self.last_size = int(math.ceil(sample_size / 32))
             self.pool_size = 1
@@ -46,6 +49,8 @@ class DPC_RNN(nn.Module):
             self.backbone, self.param = select_mousenet()
         elif network == 'simmousenet':
             self.backbone, self.param = select_simmousenet(hp)
+        elif network == 'monkeynet':
+            self.backbone, self.param = select_monkeynet()
         else:
             self.backbone, self.param = select_resnet(network, track_running_stats=False)
             

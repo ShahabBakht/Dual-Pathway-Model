@@ -3,10 +3,9 @@ import matplotlib.pyplot as plt
 
 class Network:
     def __init__(self):
-        self.AREAS_LIST = ['Retina', 'LGN', 'VISp', 'VISl', 'VISal', 'VISpm', 'VISam']
-        self.AREAS_CONNECTIVITY = [('Retina','LGN'),('LGN','VISp'),
-                            ('VISp','VISl'), ('VISp','VISal'), ('VISp','VISpm'), ('VISp','VISam')]
-        self.OUTPUT_AREA_LIST = ['VISp', 'VISl', 'VISal', 'VISpm', 'VISam'] 
+        self.AREAS_LIST = ['Retina','LGN','VISp', 'VISl','VISal','VISpm','VISam'] #
+        self.AREAS_CONNECTIVITY = [('Retina','LGN'), ('LGN','VISp'),('VISp','VISl'), ('VISp','VISal'), ('VISp','VISpm'), ('VISp','VISam')]
+        self.OUTPUT_AREA_LIST = ['VISl','VISal','VISpm','VISam']
 
     def create_graph(self):
 
