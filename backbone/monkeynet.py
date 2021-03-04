@@ -203,87 +203,6 @@ class DorsalNet(nn.Module):
                              BottleneckTransform, 
                              8,
                              drop_connect_rate=.2)
-        
-        self.res4 = ResBlock(32, 
-                             32, 
-                             1, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-
-        self.res5 = ResBlock(32, 
-                             32, 
-                             3, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-        
-        self.res6 = ResBlock(32, 
-                             32, 
-                             1, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-
-        self.res7 = ResBlock(32, 
-                             32, 
-                             3, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-        
-        self.res8 = ResBlock(32, 
-                             32, 
-                             1, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-
-        self.res9 = ResBlock(32, 
-                             32, 
-                             3, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-        
-        self.res10 = ResBlock(32, 
-                             32, 
-                             1, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-
-        self.res11 = ResBlock(32, 
-                             32, 
-                             3, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-        
-        self.res12 = ResBlock(32, 
-                             32, 
-                             1, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-
-        self.res13 = ResBlock(32, 
-                             32, 
-                             3, 
-                             1, 
-                             BottleneckTransform, 
-                             8,
-                             drop_connect_rate=.2)
-        
 
         self.dropout = nn.Dropout3d(.1)
         self.concat = Identity()
@@ -295,16 +214,6 @@ class DorsalNet(nn.Module):
                        ('res1', self.res1),
                        ('res2', self.res2),
                        ('res3', self.res3),
-                       ('res4', self.res4),
-                       ('res5', self.res5),
-                       ('res6', self.res6),
-                       ('res7', self.res7),
-                       ('res8', self.res8),
-                       ('res9', self.res9),
-                       ('res10', self.res10),
-                       ('res11', self.res11),
-                       ('res12', self.res12),
-                       ('res13', self.res13),
                        ('concat', self.concat),
                        ]
 
@@ -316,24 +225,115 @@ class DorsalNet(nn.Module):
         x2 = self.res1(x1)
         x3 = self.res2(x2)
         x4 = self.res3(x3)
-        x5 = self.res4(x4)
-        x6 = self.res5(x5)
-        x7 = self.res6(x6)
-        x8 = self.res7(x7)
-        x9 = self.res8(x8)
-        x10 = self.res9(x9)
-        x11 = self.res10(x10)
-        x12 = self.res11(x11)
-        x13 = self.res12(x12)
-        x14 = self.res13(x13)
 
         # Add two types of features together
-        self.concat(torch.cat((x0, x14), dim=1))
+        self.concat(torch.cat((x0, x4), dim=1))
 
-        x = self.dropout(x14)
+        x = self.dropout(x4)
 
         return x
+    
+    
+class OnePathNet(nn.Module):
+    def __init__(self, num_res_blocks = 20):
+        super().__init__()
+        
+        self.num_res_blocks = num_res_blocks
+        self.first_resblock_in_channels = 256 #64
+        self.resblocks_out_channels = 128 #32
+        self.resblocks_inner_dim = 32 #8
+        
+        self.res_blocks = nn.ModuleDict()
+        self.res_blocks['res0'] = ResBlock(self.first_resblock_in_channels, 
+                                           self.resblocks_out_channels, 
+                                            1, 
+                                            1, 
+                                            BottleneckTransform, 
+                                            self.resblocks_inner_dim,
+                                            drop_connect_rate=.2)
+        self.res_blocks['res1'] = ResBlock(self.resblocks_out_channels, 
+                                            self.resblocks_out_channels,
+                                            3, 
+                                            1, 
+                                            BottleneckTransform, 
+                                            self.resblocks_inner_dim,
+                                            drop_connect_rate=.2)
+        
+        for i in range(2,self.num_res_blocks,2):
+            
+            self.res_blocks[f'res{i}'] = ResBlock(self.resblocks_out_channels, 
+                                                self.resblocks_out_channels, 
+                                                 1, 
+                                                 1, 
+                                                 BottleneckTransform, 
+                                                 self.resblocks_inner_dim,
+                                                 drop_connect_rate=.2)
+            
+            self.res_blocks[f'res{i+1}'] = ResBlock(self.resblocks_out_channels, 
+                                                     self.resblocks_out_channels, 
+                                                     3, 
+                                                     1, 
+                                                     BottleneckTransform, 
+                                                     self.resblocks_inner_dim,
+                                                     drop_connect_rate=.2)
+        
 
+        
+        # Hack to get visualization working properly.
+#         self.layers = [('res0', self.res0),
+#                        ('res1', self.res1),
+#                        ('res2', self.res2),
+#                        ('res3', self.res3),
+#                        ('res4', self.res4),
+#                        ('res5', self.res5),
+#                        ('res6', self.res6),
+#                        ('res7', self.res7),
+#                        ('res8', self.res8),
+#                        ('res9', self.res9),
+#                        ('res10', self.res10),
+#                        ('res11', self.res11),
+#                        ('res12', self.res12),
+#                        ('res13', self.res13)
+#                        ]
+
+    def forward(self, x):
+        
+        for i in range(self.num_res_blocks):
+            x = self.res_blocks[f'res{i}'](x)
+            
+        return x
+    
+class VisualNet(nn.Module):
+    def __init__(self, symmetric=True, num_res_blocks = 20):
+        super().__init__()
+
+        self.path1 = OnePathNet(num_res_blocks = num_res_blocks)
+        self.shallow_out_channels = self.path1.first_resblock_in_channels
+        
+        self.s1 = ShallowNet(nstartfeats=self.shallow_out_channels, 
+                             symmetric=symmetric,
+                             dropout_rate=0,
+                             weight_norm=False)
+#         self.path2 = OnePathNet()
+        
+        self.dropout = nn.Dropout3d(.1)
+        self.concat = Identity()
+    
+    def forward(self, x):
+        
+        x0 = self.s1(x)
+        x1_1 = self.path1(x0)
+#         x1_2 = self.path2(x0)
+        
+#         x2 = self.concat(torch.cat((x1_1), dim=1))
+        x2 = x1_1 
+        
+        x = self.dropout(x2)
+        
+        return x
+        
+        
+        
 
 class Identity(nn.Module):
     def __init__(self, *args, **kwargs):
@@ -628,9 +628,13 @@ if __name__ == "__main__":
     
     tic = time.time()
     dorsal_net = DorsalNet().to('cuda')
+    visual_net = VisualNet(num_res_blocks = 10).to('cuda')
+    print(visual_net)
     
-    agg_out = dorsal_net(mydata)
-    print(agg_out.shape)
+    agg_out_dorsal = dorsal_net(mydata)
+    agg_out_visual = visual_net(mydata)
+    
+    print(agg_out_dorsal.shape, agg_out_visual.shape)
 
     print(time.time()-tic)
     
