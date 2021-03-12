@@ -75,6 +75,6 @@ def select_monkeynet():
     param = {'feature_size': None}
     model = DorsalNet_deep()
 #     model = VisualNet(num_res_blocks=10)
-    param['feature_size'] = 32 #2 * model.path1.resblocks_out_channels #96 #160 #160 #256 #
+    param['feature_size'] = 128 #1 * model.path1.resblocks_out_channels #96 #160 #160 #256 #
     
     return model, param

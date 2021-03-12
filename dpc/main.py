@@ -180,14 +180,11 @@ def main():
         
     elif args.dataset == 'airsim':
         transform = transforms.Compose([
-            #RandomHorizontalFlip(consistent=True),
-            #RandomCrop(size=112, consistent=True),
-            #ThreedGaussianBlur(5),
-            #Normalize(123.0, 75.0),
-            #ThreedExposure(.3, .3),
+            RandomHorizontalFlip(consistent=True),
+            RandomCrop(size=112, consistent=True),
             Scale(size=(args.img_dim,args.img_dim)),
-            #RandomGray(consistent=False, p=0.5),
-            #ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
+            RandomGray(consistent=False, p=0.5),
+            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
             ToTensor(),
             Normalize()
         ])

@@ -327,6 +327,7 @@ class ColorJitter(object):
         return transform
 
     def __call__(self, imgmap):
+
         if random.random() < self.threshold: # do ColorJitter
             if self.consistent:
                 transform = self.get_params(self.brightness, self.contrast,
@@ -376,6 +377,7 @@ class Normalize:
         self.mean = mean
         self.std = std
     def __call__(self, imgmap):
+
         normalize = transforms.Normalize(mean=self.mean, std=self.std)
         return [normalize(i) for i in imgmap]
 
