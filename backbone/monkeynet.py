@@ -371,9 +371,9 @@ class OnePathNet(nn.Module):
         super().__init__()
         
         self.num_res_blocks = num_res_blocks
-        self.first_resblock_in_channels = 128
-        self.resblocks_out_channels = 64
-        self.resblocks_inner_dim = 16
+        self.first_resblock_in_channels = 256
+        self.resblocks_out_channels = 128
+        self.resblocks_inner_dim = 32
         
         self.res_blocks = nn.ModuleDict()
         self.res_blocks['res0'] = ResBlock(self.first_resblock_in_channels, 
@@ -410,23 +410,6 @@ class OnePathNet(nn.Module):
                                                      drop_connect_rate=.2)
         
 
-        
-        # Hack to get visualization working properly.
-#         self.layers = [('res0', self.res0),
-#                        ('res1', self.res1),
-#                        ('res2', self.res2),
-#                        ('res3', self.res3),
-#                        ('res4', self.res4),
-#                        ('res5', self.res5),
-#                        ('res6', self.res6),
-#                        ('res7', self.res7),
-#                        ('res8', self.res8),
-#                        ('res9', self.res9),
-#                        ('res10', self.res10),
-#                        ('res11', self.res11),
-#                        ('res12', self.res12),
-#                        ('res13', self.res13)
-#                        ]
 
     def forward(self, x):
         
@@ -440,7 +423,7 @@ class VisualNet(nn.Module):
         super().__init__()
 
         self.path1 = OnePathNet(num_res_blocks = num_res_blocks)
-        self.path2 = OnePathNet(num_res_blocks = num_res_blocks)
+#         self.path2 = OnePathNet(num_res_blocks = num_res_blocks)
 #         self.path3 = OnePathNet(num_res_blocks = num_res_blocks)
 #         self.path4 = OnePathNet(num_res_blocks = num_res_blocks)
         self.shallow_out_channels = self.path1.first_resblock_in_channels
@@ -457,12 +440,12 @@ class VisualNet(nn.Module):
         
         x0 = self.s1(x)
         x1_1 = self.path1(x0)
-        x1_2 = self.path2(x0)
+#         x1_2 = self.path2(x0)
 #         x1_3 = self.path3(x0)
 #         x1_4 = self.path4(x0)
         
-        x2 = self.concat(torch.cat((x1_1,x1_2), dim=1)) #,x1_3,x1_4
-#         x2 = x1_1 
+#         x2 = self.concat(torch.cat((x1_1,x1_2), dim=1)) #,x1_3,x1_4
+        x2 = x1_1 
         
         x = self.dropout(x2)
         

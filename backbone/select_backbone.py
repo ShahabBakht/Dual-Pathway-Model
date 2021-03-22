@@ -73,8 +73,8 @@ def select_simmousenet(hp):
 
 def select_monkeynet():
     param = {'feature_size': None}
-    model = DorsalNet_deep()
-#     model = VisualNet(num_res_blocks=10)
-    param['feature_size'] = 128 #1 * model.path1.resblocks_out_channels #96 #160 #160 #256 #
+#     model = DorsalNet_deep()
+    model = VisualNet(num_res_blocks=10)
+    param['feature_size'] = 1 * model.path1.resblocks_out_channels #128 #96 #160 #160 #256 #
     
     return model, param
