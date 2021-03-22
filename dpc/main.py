@@ -435,7 +435,7 @@ def get_data(transform, mode='train'):
 
 def set_path(args):
     if args.resume: 
-        exp_path = exp_path = os.getenv('SLURM_TMPDIR')+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = exp_path = '/network/tmp1/bakhtias/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \

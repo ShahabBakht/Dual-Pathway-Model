@@ -1,9 +1,12 @@
 import sys
+import os
+import argparse
+import time
+import wandb
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.transforms as transforms
 import torch.optim as optim
 from torch.utils import data
 from torchvision import datasets, models, transforms
@@ -14,7 +17,7 @@ sys.path.append('../utils')
 from augmentation import *
 from dataset_3d import UCF101_3d
 from model import VisualNet_classifier
-from utils import calc_topk_accuracy, AverageMeter
+from utils import calc_topk_accuracy, AverageMeter, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
 
@@ -22,9 +25,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='ucf101', type=str)
 parser.add_argument('--net', default='visualnet', type=str)
 parser.add_argument('--seq_len', default=5, type=int, help='number of frames in each video block')
-parser.add_argument('--num_seq', default=8, type=int, help='number of video blocks')
 parser.add_argument('--ds', default=3, type=int, help='frame downsampling rate')
-parser.add_argument('--batch_size', default=4, type=int)
+parser.add_argument('--batch_size', default=64, type=int)
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
 parser.add_argument('--resume', default='', type=str, help='path of model to resume')
@@ -36,7 +38,7 @@ parser.add_argument('--print_freq', default=5, type=int, help='frequency of prin
 parser.add_argument('--reset_lr', action='store_true', help='Reset learning rate when resume training?')
 parser.add_argument('--prefix', default='tmp', type=str, help='prefix of checkpoint filename')
 parser.add_argument('--train_what', default='all', type=str)
-parser.add_argument('--img_dim', default=128, type=int)
+parser.add_argument('--img_dim', default=64, type=int)
 parser.add_argument('--save_checkpoint_freq', default=10, type=int)
 parser.add_argument('--hyperparameter_file', default='./SimMouseNet_hyperparams.yaml', type=str, help='the hyperparameter yaml file for SimMouseNet')
 parser.add_argument('--wandb', default=True, action='store_true')
@@ -57,12 +59,28 @@ def main():
         cuda = torch.device('cuda')
     else:
         cuda = torch.device('cpu')
-
-
-    model = VisualNet_classifier(num_classes = 101, num_res_blocks = 10, num_paths = 1)
+    
+    args.old_lr = None
+    
+    global img_path; img_path, model_path = set_path(args)
+    if os.path.exists(os.path.join(img_path,'last.pth.tar')):
+        args.resume = os.path.join(img_path,'last.pth.tar')
+    else:
+        pass
+    
+        
+    model = VisualNet_classifier(num_classes = 101, num_res_blocks = 10, num_paths = 2).to(cuda)
+    if args.wandb:
+        wandb.init(f"CPC {args.prefix}",config=args)
+        wandb.watch(model)
+    
+    print('\n===========Check Grad============')
+    for name, param in model.named_parameters():
+        print(name, param.requires_grad)
+    print('=================================\n')
 
     criterion = nn.CrossEntropyLoss()
-
+    
 
     params = model.parameters()
     optimizer = optim.Adam(params, lr = args.lr, weight_decay = args.wd)
@@ -81,14 +99,22 @@ def main():
     train_loader = get_data(transform, mode='train')
     val_loader = get_data(transform, mode='val')
 
-    for epoch in range(args.num_epochs):
+    for epoch in range(args.epochs):
 
         train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch, criterion)
             
         val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch, criterion)
+        
+        if args.wandb:
+            wandb.log({"epoch": epoch, 
+                       "train loss": train_loss,
+                       "train accuracy top1":train_accuracy_list[0], 
+                       "val loss": val_loss,
+                       "val accuracy top1": val_accuracy_list[0]})
+        
 
         is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
-        if epoch%save_checkpoint_freq == 0:
+        if epoch%args.save_checkpoint_freq == 0:
             save_this = True
         else:
             save_this = False
@@ -108,7 +134,7 @@ def main():
                          'iteration': iteration}, 
                          is_best, filename=os.path.join(model_path, 'last.pth.tar'), keep_all=save_this)
 
-        print(f'Training to ep {args.epoch} finished')
+    print(f'Training to ep {args.epochs} finished')
 
 
 def train(data_loader, model, optimizer, epoch, criterion):
@@ -122,17 +148,18 @@ def train(data_loader, model, optimizer, epoch, criterion):
 
     for idx, (input_seq, targets) in enumerate(data_loader):
         tic = time.time()
-        input_seq = input_seq.to(cuda)
+        targets = (targets - 1).squeeze().to(cuda)
+        input_seq = input_seq.squeeze().to(cuda)
         B = input_seq.size(0)
         y = model(input_seq)
 
         del input_seq
-
+        
         loss = criterion(y, targets)
 
         top1, top3, top5 = calc_topk_accuracy(y, targets, (1,3,5))
 
-        accuracy_list[0].update(top1.item(),  B)
+        accuracy_list[0].update(top1.item(), B)
         accuracy_list[1].update(top3.item(), B)
         accuracy_list[2].update(top5.item(), B)
 
@@ -150,7 +177,7 @@ def train(data_loader, model, optimizer, epoch, criterion):
                   'Loss {loss.val:.6f} ({loss.local_avg:.4f})\t'
                   'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
                    epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic,loss=losses))
-        iteration += 1
+            iteration += 1
 
     return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list]
 
@@ -159,7 +186,7 @@ def train(data_loader, model, optimizer, epoch, criterion):
 
 def validate(data_loader, model, epoch, criterion):
 
-    osses = AverageMeter()
+    losses = AverageMeter()
     accuracy = AverageMeter()
     accuracy_list = [AverageMeter(), AverageMeter(), AverageMeter()]
     model.eval()
@@ -167,7 +194,8 @@ def validate(data_loader, model, epoch, criterion):
     with torch.no_grad():
         for idx, (input_seq, targets) in enumerate(data_loader):
             tic = time.time()
-            input_seq = input_seq.to(cuda)
+            targets = (targets - 1).squeeze().to(cuda)
+            input_seq = input_seq.squeeze().to(cuda)
             B = input_seq.size(0)
             y = model(input_seq)
 
@@ -184,9 +212,10 @@ def validate(data_loader, model, epoch, criterion):
             losses.update(loss.item(), B)
             accuracy.update(top1.item(), B)
 
-            print('[{0}/{1}] Loss {loss.local_avg:.4f}\t'
-          'Acc: top1 {2:.4f}; top3 {3:.4f}; top5 {4:.4f} \t'.format(
-           epoch, args.epochs, *[i.avg for i in accuracy_list], loss=losses))
+    print('[{0}/{1}] Loss {loss.local_avg:.4f}\t'
+        'Acc: top1 {2:.4f}; top3 {3:.4f}; top5 {4:.4f} \t'.format(
+        epoch, args.epochs, *[i.avg for i in accuracy_list], loss=losses))
+    
     return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list]
 
 def get_data(transform, mode='train'):
@@ -196,21 +225,21 @@ def get_data(transform, mode='train'):
         dataset = Kinetics400_full_3d(mode=mode,
                               transform=transform,
                               seq_len=args.seq_len,
-                              num_seq=args.num_seq,
+                              num_seq=1,
                               downsample=5,
                               big=use_big_K400)
     elif args.dataset == 'ucf101':
         dataset = UCF101_3d(mode=mode,
                          transform=transform,
                          seq_len=args.seq_len,
-                         num_seq=args.num_seq,
+                         num_seq=1,
                          downsample=args.ds,
                          return_label=True)
     elif args.dataset == 'catcam':
         dataset = CatCam_3d(mode=mode,
                          transform=transform,
                          seq_len=args.seq_len,
-                         num_seq=args.num_seq,
+                         num_seq=1,
                          downsample=args.ds)
     elif args.dataset == 'airsim':
         airsim_root = os.path.join(os.getenv('SLURM_TMPDIR'),'airsim')
@@ -219,7 +248,7 @@ def get_data(transform, mode='train'):
                          regression=True, 
                          nt=40, 
                          seq_len=5, 
-                         num_seq=8, 
+                         num_seq=1, 
                          transform = transform)
     else:
         raise ValueError('dataset not supported')
@@ -256,7 +285,7 @@ train-{args.train_what}{2}'.format(
                     args=args)#os.path.dirname(os.path.dirname(args.resume))
     else:
         exp_path = os.getenv('SLURM_TMPDIR')+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_\
-bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
+bs{args.batch_size}_lr{1}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \
                     args.old_lr if args.old_lr is not None else args.lr, \
