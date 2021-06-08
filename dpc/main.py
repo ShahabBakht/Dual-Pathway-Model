@@ -26,7 +26,7 @@ from torch.utils import data
 from torchvision import datasets, models, transforms
 import torchvision.utils as vutils
 
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = False
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--net', default='resnet18', type=str)
@@ -52,11 +52,14 @@ parser.add_argument('--img_dim', default=128, type=int)
 parser.add_argument('--save_checkpoint_freq', default=10, type=int)
 parser.add_argument('--hyperparameter_file', default='./SimMouseNet_hyperparams.yaml', type=str, help='the hyperparameter yaml file for SimMouseNet')
 parser.add_argument('--wandb', default=True, action='store_true')
+parser.add_argument('--seed', default=20, type=int)
 
 def main():
-    torch.manual_seed(20)
-    np.random.seed(20)
+    
     global args; args = parser.parse_args()
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
     
     
@@ -437,7 +440,7 @@ def set_path(args):
     if args.resume: 
         exp_path = exp_path = '/network/tmp1/bakhtias/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
-train-{args.train_what}{2}'.format(
+train-{args.train_what}{2}_seed{args.seed}'.format(
                     'r%s' % args.net[6::], \
                     args.old_lr if args.old_lr is not None else args.lr, \
                     '_pt=%s' % args.pretrain.replace('/','-') if args.pretrain else '', \
@@ -452,7 +455,7 @@ train-{args.train_what}{2}'.format(
 #                     args=args)
         exp_path = '/network/tmp1/bakhtias/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
-train-{args.train_what}{2}'.format(
+train-{args.train_what}{2}_seed{args.seed}'.format(
                     'r%s' % args.net[6::], \
                     args.old_lr if args.old_lr is not None else args.lr, \
                     '_pt=%s' % args.pretrain.replace('/','-') if args.pretrain else '', \

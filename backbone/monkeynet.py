@@ -96,9 +96,11 @@ class ShallowNet(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
+        print(x.shape)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.pool_layer(x)
+        print(x.shape)
 
         if self._dropout_rate > 0:
             x = self.dropout(x)
@@ -224,7 +226,6 @@ class DorsalNet(nn.Module):
         x2 = self.res1(x1)
         x3 = self.res2(x2)
         x4 = self.res3(x3)
-
         # Add two types of features together
         self.concat(torch.cat((x0, x4), dim=1))
 
@@ -355,7 +356,6 @@ class DorsalNet_deep(nn.Module):
         x8 = self.res7(x7)
         x9 = self.res8(x8)
         x10 = self.res9(x9)
-
         
 
         # Add two types of features together
@@ -371,9 +371,9 @@ class OnePathNet(nn.Module):
         super().__init__()
         
         self.num_res_blocks = num_res_blocks
-        self.first_resblock_in_channels = 256
-        self.resblocks_out_channels = 128
-        self.resblocks_inner_dim = 32
+        self.first_resblock_in_channels = 256 #128 #
+        self.resblocks_out_channels = 128 #64 #
+        self.resblocks_inner_dim = 32 #16 #
         
         self.res_blocks = nn.ModuleDict()
         self.res_blocks['res0'] = ResBlock(self.first_resblock_in_channels, 
@@ -390,6 +390,7 @@ class OnePathNet(nn.Module):
                                             BottleneckTransform, 
                                             self.resblocks_inner_dim,
                                             drop_connect_rate=.2)
+        
         
         for i in range(2,self.num_res_blocks,2):
             
@@ -410,7 +411,8 @@ class OnePathNet(nn.Module):
                                                      drop_connect_rate=.2)
         
 
-
+        self.layers = [(f'res{i}',self.res_blocks[f'res{i}']) for i in range(len(self.res_blocks))]
+    
     def forward(self, x):
         
         for i in range(self.num_res_blocks):
@@ -435,6 +437,11 @@ class VisualNet(nn.Module):
         
         self.dropout = nn.Dropout3d(.1)
         self.concat = Identity()
+        
+        self.layers = self.path1.layers
+        self.layers.insert(0,('bn1', self.s1.bn1))
+        self.layers.insert(0,('conv1', self.s1.conv1))
+        self.layers.append(('concat', self.concat))
     
     def forward(self, x):
         
@@ -747,13 +754,13 @@ if __name__ == "__main__":
     
     tic = time.time()
     dorsal_net = DorsalNet().to('cuda')
-    visual_net = VisualNet(num_res_blocks = 10).to('cuda')
-    print(visual_net)
+#     visual_net = VisualNet(num_res_blocks = 10).to('cuda')
+#     print(visual_net)
     
     agg_out_dorsal = dorsal_net(mydata)
-    agg_out_visual = visual_net(mydata)
+#     agg_out_visual = visual_net(mydata)
     
-    print(agg_out_dorsal.shape, agg_out_visual.shape)
+    print(agg_out_dorsal.shape)
 
     print(time.time()-tic)
     

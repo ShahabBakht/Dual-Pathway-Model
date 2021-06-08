@@ -1,6 +1,7 @@
 import torch
 from torch.utils import data
 from torchvision import transforms
+from torchvision.datasets import CIFAR10
 import os
 import sys
 import time
@@ -362,7 +363,7 @@ def to_linear_class(speed, maxspeed):
     return int(speed / maxspeed * nclasses)
 
 
-class AirSim(torch.utils.data.Dataset):
+class AirSim(data.Dataset):
     """
     Loads a segment from the Airsim flythrough data.
     """
@@ -500,3 +501,118 @@ class AirSim(torch.utils.data.Dataset):
         # Returns the length of a dataset
         return len(self.sequence)
     
+class RandomDots(data.Dataset):
+    def __init__(self, root="/Tmp/slurm.827552.0", split="train", regression=True, nt=40, seq_len=5, num_seq=8, transform = None, return_label=False, fine_classification = True):
+        super().__init__()
+        
+        self.return_label = return_label
+        # make a list of folders in each condition - each folder is one sample
+        cells = []
+        if split == "train":
+            for item in Path(root).glob("train/smpl*/*/"):
+                cells.append(item)
+        elif split == "val":
+            for item in Path(root).glob("val/smpl*/*/"):
+                cells.append(item)
+                
+        cells = sorted(cells)
+        
+        sequence = []
+        i = 0
+        for cell in cells:
+            
+            # create labels
+            if 'cmplx_' in str(cell):
+                label_glob = 1
+            elif 'smpl_' in str(cell):
+                label_glob = 0
+            if '_dir_0' in str(cell):
+                label_loc = 0 #+ label_glob * 4
+            elif '_dir_90' in str(cell):
+                label_loc = 1 #+ label_glob * 4
+            elif '_dir_180' in str(cell):
+                label_loc = 2 #+ label_glob * 4
+            elif '_dir_270' in str(cell):
+                label_loc = 3 #+ label_glob * 4
+            sequence.append(
+                {'folder_path': cell,
+                 'label_loc': label_loc,
+                 'label_glob': label_glob,
+                 'idx': i,
+                }
+                )
+            
+            i += 1
+        
+        self.fine_classification = fine_classification
+        self.sequence = sequence
+        self.nt = nt
+        self.num_seq = num_seq
+        self.seq_len = seq_len
+        self.transform = transform
+        
+    def __getitem__(self, index):
+        
+        v = self.sequence[index]
+        vpath = v['folder_path']
+        if self.fine_classification is True:
+            target = v['label_loc']
+        else:
+            target = v['label_glob']
+        
+        # for every sample from the sequence, load all the frames
+        seq = [pil_loader(os.path.join(vpath, 'zcmplx_rdk_%02d.png' % (i+1))) if v['label_glob'] == 1 else pil_loader(os.path.join(vpath, 'rdk_%02d.png' % (i+1))) for i in range(self.num_seq*self.seq_len)]
+        t_seq = self.transform(seq)
+        (C, H, W) = t_seq[0].size()
+        t_seq = torch.stack(t_seq, 0)
+        t_seq = t_seq.view(self.num_seq, self.seq_len, C, H, W).transpose(1,2)
+#         t_seq = t_seq.transpose(0,1)
+        
+        if self.return_label:
+            return t_seq, target
+        else:
+            return t_seq
+        
+    def __len__(self):
+        return len(self.sequence)
+    
+
+
+class CIFAR10_3d(CIFAR10):
+    def __init__(self, root, train = True, transform = None, target_transform = None, download = False, seq_len=5, num_seq=8):
+        super().__init__(root = root, 
+                        train = train, 
+                        transform = transform, 
+                        target_transform = target_transform, 
+                        download = download)
+        self.seq_len = seq_len
+        self.num_seq = num_seq
+
+    def __getitem__(self, index):
+            """
+            Args:
+                index (int): Index
+
+            Returns:
+                tuple: (image, target) where target is index of the target class.
+            """
+            img, target = self.data[index], self.targets[index]
+            # doing this so that it is consistent with all other datasets
+            # to return a PIL Image
+            seq = [Image.fromarray(img) for _ in range(self.seq_len)]
+            
+            if self.transform is not None:    
+                t_seq = self.transform(seq)
+            else:
+                t_seq = seq
+                
+            (C, H, W) = t_seq[0].size()
+            t_seq = torch.stack(t_seq, 0)
+            t_seq = t_seq.view(self.num_seq, self.seq_len, C, H, W).transpose(1,2)            
+
+            if self.target_transform is not None:
+                target = self.target_transform(target)
+
+            return t_seq, target
+
+

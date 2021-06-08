@@ -3,7 +3,7 @@ import os
 import argparse
 import time
 import wandb
-
+print(wandb.__version__)
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,15 +15,15 @@ import torchvision.utils as vutils
 sys.path.append('../dpc')
 sys.path.append('../utils')
 from augmentation import *
-from dataset_3d import UCF101_3d
-from model import VisualNet_classifier
+from dataset_3d import UCF101_3d, RandomDots, CIFAR10_3d
+from model import VisualNet_classifier, OnePath_classifier
 from utils import calc_topk_accuracy, AverageMeter, save_checkpoint
 
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='ucf101', type=str)
-parser.add_argument('--net', default='visualnet', type=str)
+parser.add_argument('--net', default='onepath_p1', type=str)
 parser.add_argument('--seq_len', default=5, type=int, help='number of frames in each video block')
 parser.add_argument('--ds', default=3, type=int, help='frame downsampling rate')
 parser.add_argument('--batch_size', default=64, type=int)
@@ -68,8 +68,38 @@ def main():
     else:
         pass
     
+    if args.dataset == 'ucf101':
+        num_classes = 101
+    elif args.dataset == 'rdk':
+        num_classes = 4
+    elif args.dataset == 'cifar10':
+        num_classes = 10
         
-    model = VisualNet_classifier(num_classes = 101, num_res_blocks = 10, num_paths = 2).to(cuda)
+    if args.net == 'visualnet':
+        model = VisualNet_classifier(num_classes = num_classes, num_res_blocks = 10, num_paths = 2, pretrained = False, path = args.pretrain).to(cuda)
+    elif args.net == 'onepath_p1':
+        model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 10, pretrained = True, path = args.pretrain, which_path = 'path1').to(cuda)
+    elif args.net == 'onepath_p2':
+        model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 10, pretrained = True, path = args.pretrain, which_path = 'path2').to(cuda)
+        
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['state_dict'])
+        
+    if args.train_what == 'last':
+        if args.net == 'visualnet':
+            for name, param in model.visualnet.named_parameters():
+                param.requires_grad = False
+        else:
+            for name, param in model.backbone.named_parameters():
+                param.requires_grad = False
+            for name, param in model.s1.named_parameters():
+                param.requires_grad = False
+    elif args.train_what == 'nothing':
+        for name, param in model.named_parameters():
+            param.requires_grad = False
+    else: pass # train all layers
+    
     if args.wandb:
         wandb.init(f"CPC {args.prefix}",config=args)
         wandb.watch(model)
@@ -84,13 +114,25 @@ def main():
 
     params = model.parameters()
     optimizer = optim.Adam(params, lr = args.lr, weight_decay = args.wd)
-
-    transform = transforms.Compose([
-            RandomHorizontalFlip(consistent=True),
-            RandomCrop(size=224, consistent=True),
+    
+    if args.dataset == 'ucf101':
+        transform = transforms.Compose([
+                RandomHorizontalFlip(consistent=True),
+                RandomCrop(size=224, consistent=True),
+                Scale(size=(args.img_dim,args.img_dim)),
+                RandomGray(consistent=False, p=0.5),
+                ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
+                ToTensor(),
+                Normalize()
+            ])
+    elif args.dataset == 'rdk':
+        transform = transforms.Compose([
+            ToTensor(),
+            Normalize()
+        ])
+    elif args.dataset == 'cifar10':
+        transform = transforms.Compose([
             Scale(size=(args.img_dim,args.img_dim)),
-            RandomGray(consistent=False, p=0.5),
-            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
             ToTensor(),
             Normalize()
         ])
@@ -100,39 +142,47 @@ def main():
     val_loader = get_data(transform, mode='val')
 
     for epoch in range(args.epochs):
-
-        train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch, criterion)
+        if args.train_what == 'nothing':
+            val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch, criterion)
             
-        val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch, criterion)
+            if args.wandb:
+                wandb.log({"epoch": epoch,
+                           "val loss": val_loss,
+                           "val accuracy top1": val_accuracy_list[0]})
+                
+        else:    
+            train_loss, train_acc, train_accuracy_list = train(train_loader, model, optimizer, epoch, criterion)
+
+            val_loss, val_acc, val_accuracy_list = validate(val_loader, model, epoch, criterion)
         
-        if args.wandb:
-            wandb.log({"epoch": epoch, 
-                       "train loss": train_loss,
-                       "train accuracy top1":train_accuracy_list[0], 
-                       "val loss": val_loss,
-                       "val accuracy top1": val_accuracy_list[0]})
+            if args.wandb:
+                wandb.log({"epoch": epoch, 
+                           "train loss": train_loss,
+                           "train accuracy top1":train_accuracy_list[0], 
+                           "val loss": val_loss,
+                           "val accuracy top1": val_accuracy_list[0]})
         
 
-        is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
-        if epoch%args.save_checkpoint_freq == 0:
-            save_this = True
-        else:
-            save_this = False
-            
-        save_checkpoint({'epoch': epoch+1,
-                         'net': args.net,
-                         'state_dict': model.state_dict(),
-                         'best_acc': best_acc,
-                         'optimizer': optimizer.state_dict(),
-                         'iteration': iteration}, 
-                         is_best, filename=os.path.join(model_path, 'epoch%s.pth.tar' % str(epoch+1)), keep_all=save_this)
-        save_checkpoint({'epoch': epoch+1,
-                         'net': args.net,
-                         'state_dict': model.state_dict(),
-                         'best_acc': best_acc,
-                         'optimizer': optimizer.state_dict(),
-                         'iteration': iteration}, 
-                         is_best, filename=os.path.join(model_path, 'last.pth.tar'), keep_all=save_this)
+            is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
+            if epoch%args.save_checkpoint_freq == 0:
+                save_this = True
+            else:
+                save_this = False
+
+            save_checkpoint({'epoch': epoch+1,
+                             'net': args.net,
+                             'state_dict': model.state_dict(),
+                             'best_acc': best_acc,
+                             'optimizer': optimizer.state_dict(),
+                             'iteration': iteration}, 
+                             is_best, filename=os.path.join(model_path, 'epoch%s.pth.tar' % str(epoch+1)), keep_all=save_this)
+            save_checkpoint({'epoch': epoch+1,
+                             'net': args.net,
+                             'state_dict': model.state_dict(),
+                             'best_acc': best_acc,
+                             'optimizer': optimizer.state_dict(),
+                             'iteration': iteration}, 
+                             is_best, filename=os.path.join(model_path, 'last.pth.tar'), keep_all=save_this)
 
     print(f'Training to ep {args.epochs} finished')
 
@@ -148,20 +198,19 @@ def train(data_loader, model, optimizer, epoch, criterion):
 
     for idx, (input_seq, targets) in enumerate(data_loader):
         tic = time.time()
-        targets = (targets - 1).squeeze().to(cuda)
+        targets = (targets).squeeze().to(cuda)
         input_seq = input_seq.squeeze().to(cuda)
         B = input_seq.size(0)
+        print(B.shape)
         y = model(input_seq)
 
         del input_seq
         
         loss = criterion(y, targets)
 
-        top1, top3, top5 = calc_topk_accuracy(y, targets, (1,3,5))
+        top1, top2 = calc_topk_accuracy(y, targets, (1,2))
 
         accuracy_list[0].update(top1.item(), B)
-        accuracy_list[1].update(top3.item(), B)
-        accuracy_list[2].update(top5.item(), B)
 
         losses.update(loss.item(), B)
         accuracy.update(top1.item(), B)
@@ -175,8 +224,8 @@ def train(data_loader, model, optimizer, epoch, criterion):
         if idx % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Loss {loss.val:.6f} ({loss.local_avg:.4f})\t'
-                  'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
-                   epoch, idx, len(data_loader), top1, top3, top5, time.time()-tic,loss=losses))
+                  'Acc: top1 {3:.4f}; T:{4:.2f}\t'.format(
+                   epoch, idx, len(data_loader), top1, time.time()-tic,loss=losses))
             iteration += 1
 
     return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list]
@@ -194,7 +243,7 @@ def validate(data_loader, model, epoch, criterion):
     with torch.no_grad():
         for idx, (input_seq, targets) in enumerate(data_loader):
             tic = time.time()
-            targets = (targets - 1).squeeze().to(cuda)
+            targets = (targets).squeeze().to(cuda)
             input_seq = input_seq.squeeze().to(cuda)
             B = input_seq.size(0)
             y = model(input_seq)
@@ -203,17 +252,15 @@ def validate(data_loader, model, epoch, criterion):
 
             loss = criterion(y, targets)
 
-            top1, top3, top5 = calc_topk_accuracy(y, targets, (1,3,5))
+            top1, top2 = calc_topk_accuracy(y, targets, (1,2))
 
             accuracy_list[0].update(top1.item(),  B)
-            accuracy_list[1].update(top3.item(), B)
-            accuracy_list[2].update(top5.item(), B)
 
             losses.update(loss.item(), B)
             accuracy.update(top1.item(), B)
 
     print('[{0}/{1}] Loss {loss.local_avg:.4f}\t'
-        'Acc: top1 {2:.4f}; top3 {3:.4f}; top5 {4:.4f} \t'.format(
+        'Acc: top1 {2:.4f} \t'.format(
         epoch, args.epochs, *[i.avg for i in accuracy_list], loss=losses))
     
     return losses.local_avg, accuracy.local_avg, [i.local_avg for i in accuracy_list]
@@ -250,11 +297,33 @@ def get_data(transform, mode='train'):
                          seq_len=5, 
                          num_seq=1, 
                          transform = transform)
+    elif args.dataset == 'rdk':
+        rdk_root = os.path.join(os.getenv('SLURM_TMPDIR'),'RDK')
+        dataset = RandomDots(root=rdk_root, 
+                             split=mode, 
+                             nt=40, 
+                             seq_len=args.seq_len, 
+                             num_seq=1, 
+                             transform = transform, 
+                             return_label=True, 
+                             fine_classification = True)
+    elif args.dataset == 'cifar10':
+        cifar_root = os.path.join(os.getenv('SLURM_TMPDIR'),'cifar10')
+        
+        train_flag = True if mode == 'train' else False
+            
+        dataset = CIFAR10_3d(root = cifar_root, 
+                            train = train_flag, 
+                            transform = transform, 
+                            target_transform = None, 
+                            download = False,
+                            seq_len=args.seq_len, 
+                            num_seq=1)
+        
     else:
         raise ValueError('dataset not supported')
-
+        
     sampler = data.RandomSampler(dataset)
-
     if mode == 'train':
         data_loader = data.DataLoader(dataset,
                                       batch_size=args.batch_size,
@@ -277,7 +346,7 @@ def get_data(transform, mode='train'):
 def set_path(args):
     if args.resume: 
         exp_path = exp_path = os.getenv('SLURM_TMPDIR')+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_\
-bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
+bs{args.batch_size}_lr{1}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}'.format(
                     'r%s' % args.net[6::], \
                     args.old_lr if args.old_lr is not None else args.lr, \
