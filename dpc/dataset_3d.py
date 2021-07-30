@@ -11,6 +11,7 @@ import csv
 import pandas as pd
 import numpy as np
 import cv2
+import json
 sys.path.append('../utils')
 
 from augmentation import *
@@ -348,6 +349,97 @@ class UCF101_3d(data.Dataset):
         '''give action code, return action name'''
         return self.action_dict_decode[action_code]
 
+
+
+class TDW_Sim(data.Dataset):
+    
+    """ 
+    Loads ThreeDWorld Simulation data
+    """
+    
+    def __init__(self, root = "./tdw", split = "train", regression = False, nt = 40, seq_len = 5, num_seq = 8, transform = None, return_label = False):
+        
+        if split not in ("train", "val"):
+            raise NotImplementedError("Split is set to an unknown value")
+            
+        assert nt == seq_len * num_seq
+        
+        self.retun_label = return_label
+        self.split = split
+        self.root = root
+        self.transform = transform
+        self.seq_len = seq_len
+        self.num_seq = num_seq
+        self.return_label = return_label
+        
+            
+        self.cells = []    
+        cat = []
+        for item in Path(root).glob(f"images/{split}/*/*.json"):
+            if 'n03359285' not in str(item):
+                with open(item) as json_file:
+                    d = json.load(json_file)
+                    cat.append(d['o_cat'])
+                json_file.close()
+                self.cells.append(item)
+            
+            
+        cat = set(cat)
+        ids = range(0,len(cat))
+        self.encode_obj_id = dict()
+        self.decode_obj_id = dict()
+        counter = 0
+        for item in cat:
+            self.encode_obj_id[item] = counter
+            self.decode_obj_id[str(counter)] = item
+            counter += 1
+            
+        
+        self.cells = sorted(self.cells)
+        
+    def __getitem__(self, idx):
+        
+        with open(self.cells[idx]) as json_file:
+            data_dict = json.load(json_file)
+        json_file.close()
+        
+        path = os.path.join(self.root,data_dict['file'])
+        path, file = os.path.split(path)
+        
+        idx_block = self.seq_len * self.num_seq
+        assert idx_block == data_dict['num_frames'], "Not enough number of frames"
+        
+        
+        seq = [pil_loader(os.path.join(path,'img_'+file+'_%04d.jpg' % (i))) for i in range(idx_block)]
+        t_seq = self.transform(seq) # apply same transform
+        
+        (C, H, W) = t_seq[0].size()
+        t_seq = torch.stack(t_seq, 0)
+        t_seq = t_seq.view(self.num_seq, self.seq_len, C, H, W).transpose(1,2)
+        
+        label = dict()
+        camera_motion = dict()
+        object_motion = dict()
+        if self.return_label:
+            camera_motion = {'translation': data_dict['a_p_v'],
+                            'rotation': data_dict['cam_rot_w']}
+            
+            object_motion = {'translation': data_dict['o_p_w'],
+                            'rotation': data_dict['o_rot_w']}
+            
+            label = {'category': self.encode_obj_id[data_dict['o_cat']],
+                'camera_motion': camera_motion, 
+                'object_motion': object_motion}
+            return t_seq, label
+
+        return t_seq
+
+
+    def __len__(self):
+            
+        return len(self.cells)
+        
+        
 cache = {10: {}, 40: {}}
 
 nclasses = 72  # 5 degree precision in heading discrimination.
@@ -360,9 +452,8 @@ def to_class(theta):
 
 
 def to_linear_class(speed, maxspeed):
-    return int(speed / maxspeed * nclasses)
-
-
+    return int(speed / maxspeed * nclasses)       
+        
 class AirSim(data.Dataset):
     """
     Loads a segment from the Airsim flythrough data.

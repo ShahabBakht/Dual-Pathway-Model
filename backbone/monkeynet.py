@@ -96,11 +96,9 @@ class ShallowNet(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
-        print(x.shape)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.pool_layer(x)
-        print(x.shape)
 
         if self._dropout_rate > 0:
             x = self.dropout(x)

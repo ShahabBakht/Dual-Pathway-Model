@@ -191,6 +191,17 @@ def main():
             ToTensor(),
             Normalize()
         ])
+    
+    elif args.dataset == 'tdw':
+        transform = transforms.Compose([
+            RandomHorizontalFlip(consistent=True),
+            RandomCrop(size=128, consistent=True),
+            Scale(size=(args.img_dim,args.img_dim)),
+            RandomGray(consistent=False, p=0.5),
+            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
+            ToTensor(),
+            Normalize(mean=[0.5036, 0.4681, 0.4737], std = [0.2294, 0.2624, 0.2830])
+        ])
 
     train_loader = get_data(transform, 'train')
     val_loader = get_data(transform, 'val')
@@ -412,9 +423,19 @@ def get_data(transform, mode='train'):
                          seq_len=5, 
                          num_seq=8, 
                          transform = transform)
+    elif args.dataset == 'tdw':
+        tdw_root = os.path.join(os.getenv('SLURM_TMPDIR'))
+        dataset = TDW_Sim(root=tdw_root, 
+                         split=mode, 
+                         regression=True, 
+                         nt=40, 
+                         seq_len=args.seq_len, 
+                         num_seq=args.num_seq, 
+                         transform = transform,
+                         return_label = False)
+        
     else:
         raise ValueError('dataset not supported')
-
     sampler = data.RandomSampler(dataset)
 
     if mode == 'train':

@@ -76,7 +76,7 @@ def main():
         num_classes = 10
         
     if args.net == 'visualnet':
-        model = VisualNet_classifier(num_classes = num_classes, num_res_blocks = 10, num_paths = 2, pretrained = False, path = args.pretrain).to(cuda)
+        model = VisualNet_classifier(num_classes = num_classes, num_res_blocks = 10, num_paths = 1, pretrained = True, path = args.pretrain).to(cuda)
     elif args.net == 'onepath_p1':
         model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 10, pretrained = True, path = args.pretrain, which_path = 'path1').to(cuda)
     elif args.net == 'onepath_p2':
@@ -198,10 +198,9 @@ def train(data_loader, model, optimizer, epoch, criterion):
 
     for idx, (input_seq, targets) in enumerate(data_loader):
         tic = time.time()
-        targets = (targets).squeeze().to(cuda)
+        targets = (targets - 1).squeeze().to(cuda)
         input_seq = input_seq.squeeze().to(cuda)
         B = input_seq.size(0)
-        print(B.shape)
         y = model(input_seq)
 
         del input_seq
@@ -243,7 +242,7 @@ def validate(data_loader, model, epoch, criterion):
     with torch.no_grad():
         for idx, (input_seq, targets) in enumerate(data_loader):
             tic = time.time()
-            targets = (targets).squeeze().to(cuda)
+            targets = (targets - 1).squeeze().to(cuda)
             input_seq = input_seq.squeeze().to(cuda)
             B = input_seq.size(0)
             y = model(input_seq)
