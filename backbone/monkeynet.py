@@ -369,9 +369,9 @@ class OnePathNet(nn.Module):
         super().__init__()
         
         self.num_res_blocks = num_res_blocks
-        self.first_resblock_in_channels = 256 #128 #
-        self.resblocks_out_channels = 128 #64 #
-        self.resblocks_inner_dim = 32 #16 #
+        self.first_resblock_in_channels = 256 #64 #512 #512 #256 #128 #
+        self.resblocks_out_channels = 128 #32 # 2256 #56 #128 #64 #
+        self.resblocks_inner_dim = 32 #8 # 64 #32 #64 #16 #
         
         self.res_blocks = nn.ModuleDict()
         self.res_blocks['res0'] = ResBlock(self.first_resblock_in_channels, 

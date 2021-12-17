@@ -404,3 +404,7 @@ class ThreedGaussianBlur(torch.nn.Module):
         return self.t(X.reshape((-1, X.shape[-3], X.shape[-2], X.shape[-1]))).reshape(X.shape)
 
 
+def cart2pol(x, y):
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    return(rho, phi)

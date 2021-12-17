@@ -357,13 +357,17 @@ class TDW_Sim(data.Dataset):
     Loads ThreeDWorld Simulation data
     """
     
-    def __init__(self, root = "./tdw", split = "train", regression = False, nt = 40, seq_len = 5, num_seq = 8, transform = None, return_label = False):
+    def __init__(self, root = "./tdw", split = "train", regression = False, nt = 40, seq_len = 5, num_seq = 8, transform = None, return_label = False, envs = ['all']):
         
         if split not in ("train", "val"):
             raise NotImplementedError("Split is set to an unknown value")
             
-        assert nt == seq_len * num_seq
+        assert nt == seq_len * num_seq, 'total number of frames (nt) is not equal to seq_len x num_seq'
         
+        valid_envs = ['abandoned_factory', 'building_site', 'dead_grotto', 'iceland_beach', 'lava_field', 'ruin', 'tdw_room']
+        assert all((e in valid_envs) or (e == 'all') for e in envs),'environments are not valid'
+        self.envs = valid_envs if envs == ['all'] else envs
+
         self.retun_label = return_label
         self.split = split
         self.root = root
@@ -373,16 +377,18 @@ class TDW_Sim(data.Dataset):
         self.return_label = return_label
         
             
-        self.cells = []    
+        self.cells = []  
+        self.env_list = []
         cat = []
-        for item in Path(root).glob(f"images/{split}/*/*.json"):
-            if 'n03359285' not in str(item):
+        for item in Path(root).glob(f"*/images/{split}/*/*.json"):
+            if any(e in str(item) for e in self.envs):
+                tag = [e for e in self.envs if e in str(item)][0]
+                self.env_list.append(tag)
                 with open(item) as json_file:
                     d = json.load(json_file)
                     cat.append(d['o_cat'])
                 json_file.close()
                 self.cells.append(item)
-            
             
         cat = set(cat)
         ids = range(0,len(cat))
@@ -403,33 +409,45 @@ class TDW_Sim(data.Dataset):
             data_dict = json.load(json_file)
         json_file.close()
         
-        path = os.path.join(self.root,data_dict['file'])
+        path = os.path.join(self.root,self.env_list[idx],data_dict['file'])
         path, file = os.path.split(path)
         
         idx_block = self.seq_len * self.num_seq
-        assert idx_block == data_dict['num_frames'], "Not enough number of frames"
+        assert idx_block <= data_dict['num_frames'], "Not enough number of frames"
         
         
-        seq = [pil_loader(os.path.join(path,'img_'+file+'_%04d.jpg' % (i))) for i in range(idx_block)]
+        seq = [pil_loader(os.path.join(path,'img_'+file+'_%04d.jpg' % (i))) for i in range(0,idx_block,1)]
         t_seq = self.transform(seq) # apply same transform
         
         (C, H, W) = t_seq[0].size()
         t_seq = torch.stack(t_seq, 0)
-        t_seq = t_seq.view(self.num_seq, self.seq_len, C, H, W).transpose(1,2)
+        t_seq = t_seq.view(self.num_seq, int(self.seq_len/1), C, H, W).transpose(1,2)
         
         label = dict()
         camera_motion = dict()
         object_motion = dict()
         if self.return_label:
+            
+            data_dict['a_p_v']['x_v'] = torch.tensor(data_dict['a_p_v']['x_v'], dtype=torch.float)
+            data_dict['a_p_v']['z_v'] = torch.tensor(data_dict['a_p_v']['z_v'], dtype=torch.float)
+            data_dict['a_p_v']['y_v'] = torch.tensor(data_dict['a_p_v']['y_v'], dtype=torch.float)
+            data_dict['cam_rot_w']['yaw'] = torch.tensor(data_dict['cam_rot_w']['yaw'], dtype=torch.float)
+            data_dict['cam_rot_w']['pitch'] = torch.tensor(data_dict['cam_rot_w']['pitch'], dtype=torch.float)
+            data_dict['avatar_obj_vec']['x'] = torch.tensor(data_dict['avatar_obj_vec']['x'], dtype=torch.float)
+            data_dict['avatar_obj_vec']['z'] = torch.tensor(data_dict['avatar_obj_vec']['z'], dtype=torch.float)
             camera_motion = {'translation': data_dict['a_p_v'],
                             'rotation': data_dict['cam_rot_w']}
             
             object_motion = {'translation': data_dict['o_p_w'],
                             'rotation': data_dict['o_rot_w']}
             
+            camera_object_vec = {'x': data_dict['avatar_obj_vec']['x'],
+                                'z': data_dict['avatar_obj_vec']['z']}
+            
             label = {'category': self.encode_obj_id[data_dict['o_cat']],
                 'camera_motion': camera_motion, 
-                'object_motion': object_motion}
+                'object_motion': object_motion,
+                'camera_object_vec': camera_object_vec}
             return t_seq, label
 
         return t_seq

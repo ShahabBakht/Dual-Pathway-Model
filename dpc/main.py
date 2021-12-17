@@ -424,7 +424,7 @@ def get_data(transform, mode='train'):
                          num_seq=8, 
                          transform = transform)
     elif args.dataset == 'tdw':
-        tdw_root = os.path.join(os.getenv('SLURM_TMPDIR'))
+        tdw_root = os.path.join(os.getenv('SLURM_TMPDIR'),'tdw_train_7000_val_1000')
         dataset = TDW_Sim(root=tdw_root, 
                          split=mode, 
                          regression=True, 
@@ -432,7 +432,8 @@ def get_data(transform, mode='train'):
                          seq_len=args.seq_len, 
                          num_seq=args.num_seq, 
                          transform = transform,
-                         return_label = False)
+                         return_label = False,
+                         envs = ['all'])
         
     else:
         raise ValueError('dataset not supported')
