@@ -248,13 +248,14 @@ def main():
         
         val_loss, val_acc, val_accuracy_list, val_loss_hd = validate(val_loader, model, epoch)
         
-        wandb.log({"epoch": epoch, 
-                   "cpc train loss": train_loss,
-                   "cpc train accuracy top1":train_accuracy_list[0], 
-                   "cpc val loss": val_loss,
-                   "cpc val accuracy top1": val_accuracy_list[0],
-                   "heading train loss": train_loss_hd,
-                   "heading val loss": val_loss_hd})
+        if args.wandb:
+            wandb.log({"epoch": epoch, 
+                       "cpc train loss": train_loss,
+                       "cpc train accuracy top1":train_accuracy_list[0], 
+                       "cpc val loss": val_loss,
+                       "cpc val accuracy top1": val_accuracy_list[0],
+                       "heading train loss": train_loss_hd,
+                       "heading val loss": val_loss_hd})
         
         # save curve
         writer_train.add_scalar('global/loss', train_loss, epoch)
