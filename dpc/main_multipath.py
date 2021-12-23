@@ -397,11 +397,11 @@ def train(data_loader, model, optimizer, epoch):
         
         loss_hd_weighted = args.hd_weight * loss_hd
         for name, param in model.module.backbone.named_parameters():
-            param.requires_grad = False
+            param.requires_grad = True #False
         for name, param in model.module.agg.named_parameters():
-            param.requires_grad = False
+            param.requires_grad = True #False
         for name, param in model.module.network_pred.named_parameters():
-            param.requires_grad = False
+            param.requires_grad = True #False
         ## **** this needs to be corrected  - loss_hd is not weighted currently **** ####
         loss_hd.backward()
         optimizer.step()
