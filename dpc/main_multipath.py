@@ -397,11 +397,11 @@ def train(data_loader, model, optimizer, epoch):
         
         loss_hd_weighted = args.hd_weight * loss_hd
         for name, param in model.module.backbone.named_parameters():
-            param.requires_grad = False
+            param.requires_grad = True #False
         for name, param in model.module.agg.named_parameters():
-            param.requires_grad = False
+            param.requires_grad = True #False
         for name, param in model.module.network_pred.named_parameters():
-            param.requires_grad = False
+            param.requires_grad = True #False
         ## **** this needs to be corrected  - loss_hd is not weighted currently **** ####
         loss_hd.backward()
         optimizer.step()
@@ -556,7 +556,7 @@ def get_data(transform, mode='train'):
                                       batch_size=args.batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=32,
+                                      num_workers=20,
                                       pin_memory=True,
                                       drop_last=True)
     elif mode == 'val':
@@ -564,7 +564,7 @@ def get_data(transform, mode='train'):
                                       batch_size=args.batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=32,
+                                      num_workers=20,
                                       pin_memory=True,
                                       drop_last=True)
     print('"%s" dataset size: %d' % (mode, len(dataset)))
@@ -572,7 +572,7 @@ def get_data(transform, mode='train'):
 
 def set_path(args):
     if args.resume: 
-        exp_path = exp_path = '/network/scratch/b/bakhtias/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = exp_path = '/home/shahabkb/scratch/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}_seed{args.seed}'.format(
                     'r%s' % args.net[6::], \
@@ -587,7 +587,7 @@ train-{args.train_what}{2}_seed{args.seed}'.format(
 #                     args.old_lr if args.old_lr is not None else args.lr, \
 #                     '_pt=%s' % args.pretrain.replace('/','-') if args.pretrain else '', \
 #                     args=args)
-        exp_path = '/network/scratch/b/bakhtias/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
+        exp_path = '/home/shahabkb/scratch/Results'+'/log_{args.prefix}/{args.dataset}-{args.img_dim}_{0}_{args.model}_\
 bs{args.batch_size}_lr{1}_seq{args.num_seq}_pred{args.pred_step}_len{args.seq_len}_ds{args.ds}_\
 train-{args.train_what}{2}_seed{args.seed}'.format(
                     'r%s' % args.net[6::], \
