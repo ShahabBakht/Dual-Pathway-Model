@@ -85,6 +85,8 @@ def main():
     
     if args.pretrain is '':
         pretrained = False
+    else:
+        pretrained = True
         
     if args.net == 'visualnet':
         if args.target == 'self_motion':
@@ -92,9 +94,9 @@ def main():
         else:
             model = VisualNet_classifier(num_classes = num_classes, num_res_blocks = 5, num_paths = 1, pretrained = pretrained, path = args.pretrain)
     elif args.net == 'onepath_p1':
-        model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 10, pretrained = pretrained, path = args.pretrain, which_path = 'path1')
+        model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 20, pretrained = pretrained, path = args.pretrain, which_path = 'path1')
     elif args.net == 'onepath_p2':
-        model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 10, pretrained = pretrained, path = args.pretrain, which_path = 'path2')
+        model = OnePath_classifier(num_classes = num_classes, num_res_blocks = 20, pretrained = pretrained, path = args.pretrain, which_path = 'path2')
      
     model = nn.DataParallel(model)
     model = model.to(cuda)
@@ -117,9 +119,9 @@ def main():
             for name, param in model.visualnet.named_parameters():
                 param.requires_grad = False
         else:
-            for name, param in model.backbone.named_parameters():
+            for name, param in model.module.backbone.named_parameters():
                 param.requires_grad = False
-            for name, param in model.s1.named_parameters():
+            for name, param in model.module.s1.named_parameters():
                 param.requires_grad = False
     elif args.train_what == 'nothing':
         for name, param in model.named_parameters():
@@ -142,6 +144,8 @@ def main():
         criterion = nn.MSELoss(reduction = 'sum')
 #         criterion = nn.L1Loss(reduction = 'sum')
     elif args.target == 'act_recog' and args.dataset == 'ucf101':
+        criterion = nn.CrossEntropyLoss()
+    elif args.target == 'motion_dir' and args.dataset == 'rdk':
         criterion = nn.CrossEntropyLoss()
     else:
         raise NotImplementedError(f"{args.target} is not a valid target variable or the selected dataset doesn't support this target variable")
@@ -455,12 +459,12 @@ def get_data(transform, mode='train'):
         dataset = TDW_Sim(root=tdw_root, 
                          split=mode, 
                          regression=True, 
-                         nt=40, 
-                         seq_len=5,#args.seq_len, 
-                         num_seq=8,#1, 
+                         nt=5, 
+                         seq_len=args.seq_len, #5,#
+                         num_seq=1, #8,#
                          transform = transform,
                          return_label = True,
-                         envs = ['tdw_room', 'building_site'] ) #['abandoned_factory', 'building_site'] #['dead_grotto', 'iceland_beach', 'lava_field', 'ruin', 'tdw_room']   ['abandoned_factory', 'building_site']  ['iceland_beach','lava_field']  
+                         envs = ['tdw_room']) #'building_site','iceland_beach' ['abandoned_factory', 'building_site'] #['dead_grotto', 'iceland_beach', 'lava_field', 'ruin', 'tdw_room']   ['abandoned_factory', 'building_site']  ['iceland_beach','lava_field']  
         
     else:
         raise ValueError('dataset not supported')

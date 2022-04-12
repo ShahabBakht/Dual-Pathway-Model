@@ -389,19 +389,24 @@ class TDW_Sim(data.Dataset):
                     cat.append(d['o_cat'])
                 json_file.close()
                 self.cells.append(item)
-            
+                
         cat = set(cat)
+        cat = sorted(cat)
         ids = range(0,len(cat))
         self.encode_obj_id = dict()
         self.decode_obj_id = dict()
         counter = 0
         for item in cat:
+            print(f'object id: {counter}, name: {item}')
             self.encode_obj_id[item] = counter
             self.decode_obj_id[str(counter)] = item
             counter += 1
             
         
+        
+        
         self.cells = sorted(self.cells)
+        self.env_list = sorted(self.env_list)
         
     def __getitem__(self, idx):
         
@@ -443,7 +448,7 @@ class TDW_Sim(data.Dataset):
             
             camera_object_vec = {'x': data_dict['avatar_obj_vec']['x'],
                                 'z': data_dict['avatar_obj_vec']['z']}
-            
+#             print(data_dict['o_cat'],self.encode_obj_id[data_dict['o_cat']],self.cells[idx])
             label = {'category': self.encode_obj_id[data_dict['o_cat']],
                 'camera_motion': camera_motion, 
                 'object_motion': object_motion,

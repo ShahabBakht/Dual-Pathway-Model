@@ -369,9 +369,9 @@ class OnePathNet(nn.Module):
         super().__init__()
         
         self.num_res_blocks = num_res_blocks
-        self.first_resblock_in_channels = 256 #64 #512 #512 #256 #128 #
-        self.resblocks_out_channels = 128 #32 # 2256 #56 #128 #64 #
-        self.resblocks_inner_dim = 32 #8 # 64 #32 #64 #16 #
+        self.first_resblock_in_channels = 128  #256 #64 #512 #512 #256 #128 #
+        self.resblocks_out_channels = 64 #128 #32 # 2256 #56 #128 #64 #
+        self.resblocks_inner_dim = 16 #32 #8 # 64 #32 #64 #16 #
         
         self.res_blocks = nn.ModuleDict()
         self.res_blocks['res0'] = ResBlock(self.first_resblock_in_channels, 
@@ -423,7 +423,7 @@ class VisualNet(nn.Module):
         super().__init__()
 
         self.path1 = OnePathNet(num_res_blocks = num_res_blocks)
-#         self.path2 = OnePathNet(num_res_blocks = num_res_blocks)
+        self.path2 = OnePathNet(num_res_blocks = num_res_blocks)
 #         self.path3 = OnePathNet(num_res_blocks = num_res_blocks)
 #         self.path4 = OnePathNet(num_res_blocks = num_res_blocks)
         self.shallow_out_channels = self.path1.first_resblock_in_channels
@@ -445,16 +445,16 @@ class VisualNet(nn.Module):
         
         x0 = self.s1(x)
         x1_1 = self.path1(x0)
-#         x1_2 = self.path2(x0)
+        x1_2 = self.path2(x0)
 #         x1_3 = self.path3(x0)
 #         x1_4 = self.path4(x0)
         
-#         x2 = self.concat(torch.cat((x1_1,x1_2), dim=1)) #,x1_3,x1_4
-        x2 = x1_1 
+        x2 = self.concat(torch.cat((x1_1,x1_2), dim=1)) #,x1_3,x1_4
+#         x2 = x1_1 
         
         x = self.dropout(x2)
         
-        return x
+        return (x, x1_1, x1_2) #(x, x1_1) #, 
         
         
         

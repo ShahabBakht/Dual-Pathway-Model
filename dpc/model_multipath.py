@@ -13,7 +13,7 @@ from convrnn import ConvGRU
 
 class DPC_Plus(nn.Module):
     '''DPC with RNN'''
-    def __init__(self, sample_size, num_seq=8, seq_len=5, pred_step=3, network='monkeynet'):
+    def __init__(self, sample_size, num_seq=8, seq_len=5, pred_step=3, network='monkeynet', heads=['heading','obj'], paths=['heading','obj']): #['heading','obj']
         super(DPC_Plus, self).__init__()
 #         torch.cuda.manual_seed(233) #233
         print('Using DPC-RNN model')
@@ -21,6 +21,8 @@ class DPC_Plus(nn.Module):
         self.num_seq = num_seq
         self.seq_len = seq_len
         self.pred_step = pred_step
+        self.heads = heads
+        self.paths = paths
         
         if network == 'vgg' or network == 'mousenet' or network == 'simmousenet' or network == 'monkeynet':
             self.last_duration = seq_len
@@ -69,10 +71,13 @@ class DPC_Plus(nn.Module):
         self.mask = None
         self.relu = nn.ReLU(inplace=False)
         
-        self.linear1_1 = nn.Linear(self.backbone.path1.resblocks_out_channels,64)
-        self.linear1_2 = nn.Linear(self.backbone.path1.resblocks_out_channels,64)
-        self.linear2_1 = nn.Linear(64,2)
-        self.linear2_2 = nn.Linear(64,1)
+        if 'heading' in self.heads:
+            self.linear1_1 = nn.Linear(1*self.backbone.path1.resblocks_out_channels,64)
+            self.linear1_2 = nn.Linear(1*self.backbone.path1.resblocks_out_channels,64)
+            self.linear2_1 = nn.Linear(64,2)
+            self.linear2_2 = nn.Linear(64,1)
+        if 'obj' in self.heads:
+            self.linear_obj = nn.Linear(self.backbone.path1.resblocks_out_channels,73)
         
         self._initialize_weights(self.agg)
         self._initialize_weights(self.network_pred)
@@ -84,7 +89,7 @@ class DPC_Plus(nn.Module):
         block = block.view(B*N, C, SL, H, W)
         
         ### predictive part
-        feature = self.backbone(block)
+        feature, feature_1, feature_2 = self.backbone(block) #
          
         feature = F.avg_pool3d(feature, (self.last_duration, self.pool_size, self.pool_size), stride=(1, self.pool_size, self.pool_size))
         feature_inf_all = feature.view(B, N, self.param['feature_size'], self.last_size, self.last_size) # before ReLU, (-inf, +inf)
@@ -131,23 +136,61 @@ class DPC_Plus(nn.Module):
             self.mask = mask
         
         
-        ## heading part
+        ### heading part ###
         N = block.shape[0]//B
-        block = block.view(B, N, C, SL, H, W).permute(0,2,1,3,4,5).contiguous().view(B,C,N*SL,H,W) #permute(0,1,3,2,4,5).contiguous().view(B,N*SL,C,H,W).permute(0,2,1,3,4)
-        feature_hd = self.backbone.s1(block)
+        (BN, Cout1, SL, Hout1, Wout1) = feature_2.shape
+        if self.paths[0] == 'heading' and self.paths[1] == 'obj':
+            # print('heading is first')
+            feature_hd = feature_1.view(B, N, Cout1, SL, Hout1, Wout1).permute(0,2,1,3,4,5).contiguous().view(B, Cout1, N*SL, Hout1, Wout1) #
+            feature_obj = feature_2.view(B, N, Cout1, SL, Hout1, Wout1).permute(0,2,1,3,4,5).contiguous().view(B, Cout1, N*SL, Hout1, Wout1) #
+        elif self.paths[0] == 'obj' and self.paths[1] == 'heading':
+            # print('obj is first')
+            feature_hd = feature_2.view(B, N, Cout1, SL, Hout1, Wout1).permute(0,2,1,3,4,5).contiguous().view(B, Cout1, N*SL, Hout1, Wout1) #
+            feature_obj = feature_1.view(B, N, Cout1, SL, Hout1, Wout1).permute(0,2,1,3,4,5).contiguous().view(B, Cout1, N*SL, Hout1, Wout1) #
+    
+#         feature_cat = torch.cat((feature_1,feature_2), dim=1)
+#         (BN, Cout1, SL, Hout1, Wout1) = feature_cat.shape
+#         feature_hd = feature_cat.view(B, N, Cout1, SL, Hout1, Wout1).permute(0,2,1,3,4,5).contiguous().view(B, Cout1, N*SL, Hout1, Wout1)
+
         del block
 
-        feature_hd = self.backbone.path1(feature_hd)
-        feature_hd = nn.functional.avg_pool3d(feature_hd, kernel_size = (feature_hd.shape[2], feature_hd.shape[3], feature_hd.shape[4])).squeeze()
-        feature_hd_1 = self.linear1_1(feature_hd)
-        feature_hd_2 = self.linear1_2(feature_hd)
-        feature_hd_1 = self.relu(feature_hd_1)
-        feature_hd_2 = self.relu(feature_hd_2)
-        y_hd_1 = self.linear2_1(feature_hd_1)
-        y_hd_2 = self.linear2_2(feature_hd_2)
-        y_hd = torch.cat((y_hd_1,y_hd_2),1)
+        if ('obj' in self.heads) and ('heading' not in self.heads):
+#             feature_hd = self.backbone.path1(feature_hd)
+            feature_obj = nn.functional.avg_pool3d(feature_obj, kernel_size = (feature_hd.shape[2], feature_hd.shape[3], feature_hd.shape[4])).squeeze()
+            y_obj = self.linear_obj(feature_obj)
+            
+            return [score, self.mask], y_obj
         
-        return [score, self.mask], y_hd
+        elif ('heading' in self.heads) and ('obj' not in self.heads):
+#             feature_hd = self.backbone.path1(feature_hd)
+            feature_hd = nn.functional.avg_pool3d(feature_hd, kernel_size = (feature_hd.shape[2], feature_hd.shape[3], feature_hd.shape[4])).squeeze()
+            feature_hd_1 = self.linear1_1(feature_hd)
+            feature_hd_2 = self.linear1_2(feature_hd)
+            feature_hd_1 = self.relu(feature_hd_1)
+            feature_hd_2 = self.relu(feature_hd_2)
+            y_hd_1 = self.linear2_1(feature_hd_1)
+            y_hd_2 = self.linear2_2(feature_hd_2)
+            y_hd = torch.cat((y_hd_1,y_hd_2),1)
+        
+            return [score, self.mask], y_hd
+        
+        elif ('heading' in self.heads) and ('obj' in self.heads):
+            
+            feature_obj = nn.functional.avg_pool3d(feature_obj, kernel_size = (feature_hd.shape[2], feature_hd.shape[3], feature_hd.shape[4])).squeeze()
+            y_obj = self.linear_obj(feature_obj)
+            
+            feature_hd = nn.functional.avg_pool3d(feature_hd, kernel_size = (feature_hd.shape[2], feature_hd.shape[3], feature_hd.shape[4])).squeeze()
+            feature_hd_1 = self.linear1_1(feature_hd)
+            feature_hd_2 = self.linear1_2(feature_hd)
+            feature_hd_1 = self.relu(feature_hd_1)
+            feature_hd_2 = self.relu(feature_hd_2)
+            y_hd_1 = self.linear2_1(feature_hd_1)
+            y_hd_2 = self.linear2_2(feature_hd_2)
+            y_hd = torch.cat((y_hd_1,y_hd_2),1)
+            
+            return [score, self.mask], y_hd, y_obj
+        
+        
 
     def _initialize_weights(self, module):
         for name, param in module.named_parameters():

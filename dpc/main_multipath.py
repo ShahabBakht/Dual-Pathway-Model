@@ -12,6 +12,9 @@ import yaml
 plt.switch_backend('agg')
 
 sys.path.append('../utils')
+import torch
+print(torch.__path__)
+print(torch.__version__)
 from dataset_3d import *
 from model_3d import *
 from model_multipath import *
@@ -19,7 +22,7 @@ from resnet_2d3d import neq_load_customized
 from augmentation import *
 from utils import AverageMeter, save_checkpoint, denorm, calc_topk_accuracy
 
-import torch
+
 import torch.optim as optim
 # from torch.optim.swa_utils import AveragedModel, SWALR
 # from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -28,6 +31,7 @@ from torchvision import datasets, models, transforms
 import torchvision.utils as vutils
 
 torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--net', default='resnet18', type=str)
@@ -36,6 +40,7 @@ parser.add_argument('--dataset', default='ucf101', type=str)
 parser.add_argument('--seq_len', default=5, type=int, help='number of frames in each video block')
 parser.add_argument('--num_seq', default=8, type=int, help='number of video blocks')
 parser.add_argument('--pred_step', default=3, type=int)
+parser.add_argument('--paths_setting', '--list', nargs='+', help='<Required> Set flag', required=True)
 parser.add_argument('--ds', default=3, type=int, help='frame downsampling rate')
 parser.add_argument('--batch_size', default=4, type=int)
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
@@ -50,12 +55,13 @@ parser.add_argument('--print_freq', default=5, type=int, help='frequency of prin
 parser.add_argument('--reset_lr', action='store_true', help='Reset learning rate when resume training?')
 parser.add_argument('--prefix', default='tmp', type=str, help='prefix of checkpoint filename')
 parser.add_argument('--train_what', default='all', type=str)
-parser.add_argument('--target', default='obj_categ', type=str, help='what to use as the target variables')
+parser.add_argument('--target', default=('obj_categ','self_motion'), type=str, help='what to use as the target variables')
 parser.add_argument('--img_dim', default=128, type=int)
 parser.add_argument('--save_checkpoint_freq', default=10, type=int)
 parser.add_argument('--hyperparameter_file', default='./SimMouseNet_hyperparams.yaml', type=str, help='the hyperparameter yaml file for SimMouseNet')
 parser.add_argument('--wandb', default=False, action='store_true')
 parser.add_argument('--seed', default=20, type=int)
+parser.add_argument('--store_grad', default=False, action='store_true')
 
 def main():
     
@@ -88,14 +94,19 @@ def main():
                         num_seq=args.num_seq, 
                         seq_len=args.seq_len, 
                         network=args.net, 
-                        pred_step=args.pred_step)
+                        pred_step=args.pred_step,
+                        heads=['heading', 'obj'],
+                        paths=args.paths_setting)
         
     else: raise ValueError('wrong model!')
 
     model = nn.DataParallel(model)
     model = model.to(cuda)
     global criterion; criterion = nn.CrossEntropyLoss()
-    global criterion_aux;
+    if 'obj_categ' in args.target:
+        global criterion_aux_obj 
+    if 'self_motion' in args.target:
+        global criterion_aux_hd 
     global temperature; temperature = 1
     
     if args.wandb:
@@ -116,15 +127,15 @@ def main():
     params = model.parameters()
     optimizer = optim.Adam(params, lr=args.lr, weight_decay=args.wd)
     # setting additional criterions
-    if args.target == 'obj_categ' and (args.dataset == 'tdw' or args.dataset == 'cifar10'):
-        criterion_aux = nn.CrossEntropyLoss()
-    elif args.target == 'self_motion':
-        criterion_aux = nn.MSELoss(reduction = 'sum')
+    if ('obj_categ'  in args.target) and (args.dataset == 'tdw' or args.dataset == 'cifar10'):
+        criterion_aux_obj = nn.CrossEntropyLoss()
+    if 'self_motion' in args.target:
+        criterion_aux_hd = nn.MSELoss(reduction = 'sum')
 #         criterion_aux = nn.L1Loss(reduction = 'sum')
-    elif args.target == 'act_recog' and args.dataset == 'ucf101':
-        criterion_aux = nn.CrossEntropyLoss()
-    else:
-        raise NotImplementedError(f"{args.target} is not a valid target variable or the selected dataset doesn't support this target variable")
+    if ('act_recog' in args.target) and (args.dataset == 'ucf101'):
+        criterion_aux_act = nn.CrossEntropyLoss()
+#     else:
+#         raise NotImplementedError(f"{args.target} is not a valid target variable or the selected dataset doesn't support this target variable")
         
     args.old_lr = None
 
@@ -133,7 +144,9 @@ def main():
     global iteration; iteration = 0
 
     ### restart training ###
-    global img_path; img_path, model_path = set_path(args)
+    global img_path
+    global model_path
+    img_path, model_path = set_path(args)
     if os.path.exists(os.path.join(img_path,'last.pth.tar')):
         args.resume = os.path.join(img_path,'last.pth.tar')
     else:
@@ -212,11 +225,7 @@ def main():
     
     elif args.dataset == 'tdw':
         transform = transforms.Compose([
-            #RandomHorizontalFlip(consistent=True),
-            #RandomCrop(size=128, consistent=True),
             Scale(size=(args.img_dim,args.img_dim)),
-            #RandomGray(consistent=False, p=0.5),
-            #ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0),
             ToTensor(),
             Normalize(mean=[0.5036, 0.4681, 0.4737], std = [0.2294, 0.2624, 0.2830])
         ])
@@ -244,9 +253,9 @@ def main():
     
     for epoch in range(args.start_epoch, args.epochs):
 
-        train_loss, train_acc, train_accuracy_list, train_loss_hd = train(train_loader, model, optimizer, epoch)
+        train_loss, train_acc, train_accuracy_list, train_loss_obj, train_acc_obj, train_accuracy_list_obj, train_loss_hd = train(train_loader, model, optimizer, epoch)
         
-        val_loss, val_acc, val_accuracy_list, val_loss_hd = validate(val_loader, model, epoch)
+        val_loss, val_acc, val_accuracy_list, val_loss_obj, val_acc_obj, val_accuracy_list_obj, val_loss_hd = validate(val_loader, model, epoch)
         
         if args.wandb:
             wandb.log({"epoch": epoch, 
@@ -254,13 +263,19 @@ def main():
                        "cpc train accuracy top1":train_accuracy_list[0], 
                        "cpc val loss": val_loss,
                        "cpc val accuracy top1": val_accuracy_list[0],
+                       "obj categ train loss": train_loss_obj,
+                       "obj categ train accuracy top1":train_accuracy_list_obj[0], 
+                       "obj categ val loss": val_loss_obj,
+                       "obj categ val accuracy top1": val_accuracy_list_obj[0],
                        "heading train loss": train_loss_hd,
                        "heading val loss": val_loss_hd})
         
         # save curve
         writer_train.add_scalar('global/loss', train_loss, epoch)
+        writer_train.add_scalar('global/loss', train_loss_hd, epoch)
         writer_train.add_scalar('global/accuracy', train_acc, epoch)
         writer_val.add_scalar('global/loss', val_loss, epoch)
+        writer_val.add_scalar('global/loss', val_loss_hd, epoch)
         writer_val.add_scalar('global/accuracy', val_acc, epoch)
         writer_train.add_scalar('accuracy/top1', train_accuracy_list[0], epoch)
         writer_train.add_scalar('accuracy/top3', train_accuracy_list[1], epoch)
@@ -270,7 +285,7 @@ def main():
         writer_val.add_scalar('accuracy/top5', val_accuracy_list[2], epoch)
 
         # save check_point
-        is_best_loss = (val_loss + val_loss_hd) < best_loss; best_loss = min(val_loss + val_loss_hd, best_loss)
+        is_best_loss = (val_loss + val_loss_hd + val_loss_obj) < best_loss; best_loss = min(val_loss + val_loss_hd + val_loss_obj, best_loss)
 #         is_best = val_acc > best_acc; best_acc = max(val_acc, best_acc)
         if epoch%save_checkpoint_freq == 0:
             save_this = True
@@ -313,14 +328,20 @@ def train(data_loader, model, optimizer, epoch):
     
     losses_hd = AverageMeter()
     
+    losses_obj = AverageMeter()
+    accuracy_obj = AverageMeter()
+    accuracy_list_obj = [AverageMeter(), AverageMeter(), AverageMeter()]
+    
     model.train()
     global iteration
-
+    
+    
     for idx, (input_seq, targets) in enumerate(data_loader):
         tic = time.time()
+        loss_all = 0
         input_seq = input_seq.to(cuda)
         B = input_seq.size(0)
-        [score_, mask_], y_hd = model(input_seq)
+        [score_, mask_], y_hd, y_obj = model(input_seq)
         # visualize
         if (iteration == 0) or (iteration == args.print_freq):
             if B > 2: input_seq = input_seq[0:2,:]
@@ -351,83 +372,144 @@ def train(data_loader, model, optimizer, epoch):
         accuracy_cpc.update(top1_cpc.item(), B)
 
         del score_
-        
-        
             
         optimizer.zero_grad()
-        loss_cpc.backward()
+        
+        if 'cpc' in args.target:
+            loss_all += loss_cpc
+            # loss_cpc.backward(retain_graph = True)
+        
 #         optimizer.step()
-
+    
         del loss_cpc
         
         if args.dataset == 'tdw':
-            if args.target == 'obj_categ':
-                y_gt = targets['category']
-            elif args.target == 'self_motion':
+            if 'obj_categ' in args.target:
+                y_gt_obj = targets['category']
+                y_gt_obj = y_gt_obj.squeeze().to(cuda)
+                
+            if 'self_motion' in args.target:
 
                 norm_cam = torch.linalg.norm(torch.cat((200*targets['camera_motion']['translation']['x_v'].unsqueeze(1),200*targets['camera_motion']['translation']['z_v'].unsqueeze(1)),dim=1),dim=1)
                 norm_camobj = torch.linalg.norm(torch.cat((targets['camera_object_vec']['x'].unsqueeze(1),targets['camera_object_vec']['z'].unsqueeze(1)),dim=1),dim=1)
-                y_gt = torch.cat(((200*targets['camera_motion']['translation']['x_v']/norm_cam - targets['camera_object_vec']['x']/norm_camobj).unsqueeze(dim = 1),
+                y_gt_hd = torch.cat(((200*targets['camera_motion']['translation']['x_v']/norm_cam - targets['camera_object_vec']['x']/norm_camobj).unsqueeze(dim = 1),
                                    (200*targets['camera_motion']['translation']['z_v']/norm_cam - targets['camera_object_vec']['z']/norm_camobj).unsqueeze(dim = 1),
                                     targets['camera_motion']['rotation']['yaw'].unsqueeze(dim = 1)),
                                     dim = 1) #
-
+                y_gt_hd = y_gt_hd.squeeze().to(cuda)
                 
-        elif args.dataset == 'ucf101':
-            y_gt = targets - 1
+        if args.dataset == 'ucf101':
+            y_gt_act = targets - 1
         else:
             y_gt = targets
+        
+#         print(f'path2 pre hd {model.module.backbone.path2.res_blocks.res18.branch2.c.weight.grad.abs().mean()}')
+#         print(f'path1 pre hd {model.module.backbone.path1.res_blocks.res18.branch2.c.weight.grad.abs().mean()}')
+        
+        if 'self_motion' in args.target:
+            loss_hd = criterion_aux_hd(y_hd, y_gt_hd)
             
-        y_gt = y_gt.squeeze().to(cuda)
-
+        if 'obj_categ' in args.target:
+            loss_obj = criterion_aux_obj(y_obj, y_gt_obj)
         
-        loss_hd = criterion_aux(y_hd, y_gt)
-        
-        if isinstance(criterion_aux, nn.CrossEntropyLoss):
-            top1, top2 = calc_topk_accuracy(y, y_gt, (1,2))
-            accuracy_list[0].update(top1.item(), B)
-            accuracy.update(top1.item(), B)
-        elif isinstance(criterion_aux, nn.L1Loss) or isinstance(criterion_aux, nn.MSELoss):
+        if 'criterion_aux_hd' in globals():
+            
             loss_hd = loss_hd/B
+            losses_hd.update(loss_hd.item(), B)
+#             loss_hd_weighted = args.hd_weight * loss_hd
+            loss_all += loss_hd
+            #loss_hd.backward(retain_graph = True)
         
-        losses_hd.update(loss_hd.item(), B)
+        if 'criterion_aux_obj' in globals():
+            top1_obj, top2_obj = calc_topk_accuracy(y_obj, y_gt_obj, (1,2))
+            accuracy_list_obj[0].update(top1_obj.item(), B)
+            accuracy_obj.update(top1_obj.item(), B)
+#             loss_obj = loss_obj/B
+            losses_obj.update(loss_obj.item(), B)
+            loss_all += loss_obj
+            #loss_obj.backward()
+            
+#         print(f'path2 post hd {model.module.backbone.path2.res_blocks.res18.branch2.c.weight.grad.abs().mean()}')
+#         print(f'path1 post hd {model.module.backbone.path1.res_blocks.res18.branch2.c.weight.grad.abs().mean()}')
         
-
-#         optimizer.zero_grad()
+        loss_all.backward()
+        del loss_all
         
-        loss_hd_weighted = args.hd_weight * loss_hd
-        for name, param in model.module.backbone.named_parameters():
-            param.requires_grad = True #False
-        for name, param in model.module.agg.named_parameters():
-            param.requires_grad = True #False
-        for name, param in model.module.network_pred.named_parameters():
-            param.requires_grad = True #False
-        ## **** this needs to be corrected  - loss_hd is not weighted currently **** ####
-        loss_hd.backward()
+        ###################################################
+        # storing gradient norms of the heading pathway in 
+        # the model (checks which pathway is the heading pathway)
+        if args.store_grad:
+            grad_total = 0
+            num_param = 0
+            for name, param in model.named_parameters():
+                
+                if args.paths_setting[0] == 'heading':
+                    which_path_grad = 'path1'
+                elif args.paths_setting[1] == 'heading':
+                    which_path_grad = 'path2'
+                    
+                if which_path_grad in name:
+                    param_norm = param.grad.detach().data.norm(2)
+                    grad_total += param_norm.item() ** 2 #param.grad.data.norm(2)
+                    num_param += 1
+            total_norm = grad_total ** (1. / 2)
+            
+            if args.wandb:
+                wandb.log({'iteration': iteration,
+                           'grad': grad_total})
+            del grad_total
+            
+        ###################################################
+        
         optimizer.step()
         
-        del loss_hd
+        
+        
 
-
-        for name, param in model.module.backbone.named_parameters():
-            param.requires_grad = True
-        for name, param in model.module.agg.named_parameters():
-            param.requires_grad = True
-        for name, param in model.module.network_pred.named_parameters():
-            param.requires_grad = True
+        #for name, param in model.module.backbone.named_parameters():
+        #    param.requires_grad = True #False
+        #for name, param in model.module.agg.named_parameters():
+        #    param.requires_grad = True #False
+        #for name, param in model.module.network_pred.named_parameters():
+        #    param.requires_grad = True #False
 
         if idx % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'CPC Loss {loss_cpc.val:.6f} ({loss_cpc.local_avg:.4f})\t'
-                  'Heading Loss {loss_hd.val:.6f} ({loss_hd.local_avg:.4f})\t'
-                  'Acc: top1 {3:.4f}; top3 {4:.4f}; top5 {5:.4f} T:{6:.2f}\t'.format(
-                   epoch, idx, len(data_loader), top1_cpc, top3_cpc, top5_cpc, time.time()-tic,loss_cpc=losses_cpc, loss_hd=losses_hd))
+            if 'self_motion' in args.target:
+                print('Epoch: [{0}][{1}/{2}]\t'
+                      'CPC Loss {loss_cpc.val:.6f} ({loss_cpc.local_avg:.4f})\t'
+                      'Heading Loss {loss_hd.val:.6f} ({loss_hd.local_avg:.4f})\t'
+                      'CPC Acc: top1 {3:.4f} T:{4:.2f}\t'.format(
+                       epoch, idx, len(data_loader), top1_cpc, time.time()-tic,loss_cpc=losses_cpc, loss_hd=losses_hd))
+            if 'obj_categ' in args.target:    
+                print('Epoch: [{0}][{1}/{2}]\t'
+                      'CPC Loss {loss_cpc.val:.6f} ({loss_cpc.local_avg:.4f})\t'
+                      'Obj Categ Loss {loss_obj.val:.6f} ({loss_obj.local_avg:.4f})\t'
+                      'CPC Acc: top1 {3:.4f}\t'
+                      'Obj Categ: top1 {4:.4f} T:{5:.2f}\t'.format(
+                       epoch, idx, len(data_loader), top1_cpc, top1_obj, time.time()-tic,loss_cpc=losses_cpc, loss_obj=losses_obj))
+            else:
+                print('Epoch: [{0}][{1}/{2}]\t'
+                      'CPC Loss {loss_cpc.val:.6f} ({loss_cpc.local_avg:.4f})\t'
+                      'CPC Acc: top1 {3:.4f} T:{4:.2f}\t'.format(
+                       epoch, idx, len(data_loader), top1_cpc, time.time()-tic,loss_cpc=losses_cpc))
+            
+            
             writer_train.add_scalar('local/loss', losses_cpc.val, iteration)
             writer_train.add_scalar('local/accuracy', accuracy_cpc.val, iteration)
-
+            
+            if epoch < 2: 
+                save_checkpoint({'epoch': epoch+1,
+                             'net': args.net,
+                             'state_dict': model.state_dict(),
+                             # 'best_loss': best_loss,
+                             # 'best_acc': best_acc,
+                             'optimizer': optimizer.state_dict(),
+                             'iteration': iteration}, 
+                             0, filename=os.path.join(model_path, 'iter%s.pth.tar' % str(iteration)), keep_all=True)
+            
             iteration += 1
 
-    return losses_cpc.local_avg, accuracy_cpc.local_avg, [i.local_avg for i in accuracy_list_cpc], losses_hd.local_avg
+    return losses_cpc.local_avg, accuracy_cpc.local_avg, [i.local_avg for i in accuracy_list_cpc], losses_obj.local_avg, accuracy_obj.local_avg, [i.local_avg for i in accuracy_list_obj],losses_hd.local_avg
 
 
 def validate(data_loader, model, epoch):
@@ -437,13 +519,18 @@ def validate(data_loader, model, epoch):
     
     losses_hd = AverageMeter()
     
+    losses_obj = AverageMeter()
+    losses_obj = AverageMeter()
+    accuracy_obj = AverageMeter()
+    accuracy_list_obj = [AverageMeter(), AverageMeter(), AverageMeter()]
+    
     model.eval()
 
     with torch.no_grad():
         for idx, (input_seq, targets) in tqdm(enumerate(data_loader), total=len(data_loader)):
             input_seq = input_seq.to(cuda)
             B = input_seq.size(0)
-            [score_, mask_], y_hd = model(input_seq)
+            [score_, mask_], y_hd, y_obj = model(input_seq)
             del input_seq
 
             if idx == 0: target_, (_, B2, NS, NP, SQ) = process_output(mask_)
@@ -466,42 +553,54 @@ def validate(data_loader, model, epoch):
             
             
             if args.dataset == 'tdw':
-                if args.target == 'obj_categ':
-                    y_gt = targets['category']
-                elif args.target == 'self_motion':
-
+                if 'obj_categ' in args.target:
+                    y_gt_obj = targets['category']
+                    y_gt_obj = y_gt_obj.squeeze().to(cuda)
+                    
+                if 'self_motion' in args.target:
                     norm_cam = torch.linalg.norm(torch.cat((200*targets['camera_motion']['translation']['x_v'].unsqueeze(1),200*targets['camera_motion']['translation']['z_v'].unsqueeze(1)),dim=1),dim=1)
                     norm_camobj = torch.linalg.norm(torch.cat((targets['camera_object_vec']['x'].unsqueeze(1),targets['camera_object_vec']['z'].unsqueeze(1)),dim=1),dim=1)
-                    y_gt = torch.cat(((200*targets['camera_motion']['translation']['x_v']/norm_cam - targets['camera_object_vec']['x']/norm_camobj).unsqueeze(dim = 1),
+                    y_gt_hd = torch.cat(((200*targets['camera_motion']['translation']['x_v']/norm_cam - targets['camera_object_vec']['x']/norm_camobj).unsqueeze(dim = 1),
                                    (200*targets['camera_motion']['translation']['z_v']/norm_cam - targets['camera_object_vec']['z']/norm_camobj).unsqueeze(dim = 1),
                                     targets['camera_motion']['rotation']['yaw'].unsqueeze(dim = 1)),
                                     dim = 1) 
+                    y_gt_hd = y_gt_hd.squeeze().to(cuda)
 
             elif args.dataset == 'ucf101':
-                y_gt = targets - 1
+                y_gt_act = targets - 1
             else:
                 y_gt = targets
                 
             tic = time.time()
-            y_hd_gt = y_gt.squeeze().to(cuda)
             
-            loss_hd = criterion_aux(y_hd, y_hd_gt)
-        
-            if isinstance(criterion_aux, nn.CrossEntropyLoss):
-                top1, top2 = calc_topk_accuracy(y, y_gt, (1,2))
-                accuracy_list[0].update(top1.item(), B)
-                accuracy.update(top1.item(), B)
-            elif isinstance(criterion_aux, nn.L1Loss) or isinstance(criterion_aux, nn.MSELoss):
+            if 'self_motion' in args.target:
+                loss_hd = criterion_aux_hd(y_hd, y_gt_hd)
+            if 'obj_categ' in args.target:
+                loss_obj = criterion_aux_obj(y_obj, y_gt_obj)
+            
+            if 'criterion_aux_obj' in globals():
+                top1_obj, top2_obj = calc_topk_accuracy(y_obj, y_gt_obj, (1,2))
+                accuracy_list_obj[0].update(top1_obj.item(), B)
+                accuracy_obj.update(top1_obj.item(), B)
+#                 loss_obj = loss_obj/B
+                losses_obj.update(loss_obj.item(), B)
+            if 'criterion_aux_hd' in globals():    
                 loss_hd = loss_hd/B
-        
-        losses_hd.update(loss_hd.item(), B)
-        
-
-    print('[{0}/{1}] CPC Loss {loss_cpc.local_avg:.4f}\t'
-          'Heading Loss {loss_hd.local_avg:.4f}\t'
-          'Acc: top1 {2:.4f}; top3 {3:.4f}; top5 {4:.4f} \t'.format(
-           epoch, args.epochs, *[i.avg for i in accuracy_list_cpc], loss_cpc=losses_cpc, loss_hd=losses_hd))
-    return losses_cpc.local_avg, accuracy_cpc.local_avg, [i.local_avg for i in accuracy_list_cpc], losses_hd.local_avg
+                losses_hd.update(loss_hd.item(), B)
+                
+    if 'obj_categ' in args.target: 
+        print('[{0}/{1}] CPC Loss {loss_cpc.local_avg:.4f}\t'
+              'Obj Categ Loss {loss_obj.local_avg:.4f}\t'
+              'CPC Acc: top1 {2:.4f}\t'
+              'Obj Categ Acc: top1 {3:.4f}\t'.format(
+               epoch, args.epochs, top1_cpc, top1_obj, loss_cpc=losses_cpc, loss_obj=losses_obj, loss_hd=losses_hd))
+    if 'self_motion' in args.target:
+        print('[{0}/{1}] CPC Loss {loss_cpc.local_avg:.4f}\t'
+              'Heading Loss {loss_hd.local_avg:.4f}\t'
+              'CPC Acc: top1 {2:.4f}\t'.format(
+               epoch, args.epochs, top1_cpc, loss_cpc=losses_cpc, loss_hd=losses_hd))
+    
+    return losses_cpc.local_avg, accuracy_cpc.local_avg, [i.local_avg for i in accuracy_list_cpc], losses_obj.local_avg, accuracy_obj.local_avg, [i.local_avg for i in accuracy_list_obj], losses_hd.local_avg
 
 
 def get_data(transform, mode='train'):

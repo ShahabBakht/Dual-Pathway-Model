@@ -7,6 +7,7 @@ sys.path.append('../backbone/')
 sys.path.append("../dpc")
 from monkeynet import VisualNet
 from model_3d import DPC_RNN
+from model_multipath import DPC_Plus
 
 
 class VisualNet_classifier(nn.Module):
@@ -23,7 +24,7 @@ class VisualNet_classifier(nn.Module):
         
     def forward(self, x):
 
-        features = self.visualnet(x)
+        _, _, features  = self.visualnet(x)
         features = nn.functional.avg_pool3d(features, kernel_size = (features.shape[2], features.shape[3], features.shape[4])).squeeze()
         y = self.linear(features)
 
@@ -34,8 +35,8 @@ class VisualNet_motion(nn.Module):
         super().__init__()
 
         self.visualnet = VisualNet(num_res_blocks = num_res_blocks)
-        self.linear1_1 = nn.Linear(num_paths * self.visualnet.path1.resblocks_out_channels,64)
-        self.linear1_2 = nn.Linear(num_paths * self.visualnet.path1.resblocks_out_channels,64)
+        self.linear1_1 = nn.Linear(1*num_paths * self.visualnet.path1.resblocks_out_channels,64)
+        self.linear1_2 = nn.Linear(1*num_paths * self.visualnet.path1.resblocks_out_channels,64)
         self.linear2_1 = nn.Linear(64,2)
         self.linear2_2 = nn.Linear(64,1)
 #         self.linear2_1 = nn.Linear(128,1)
@@ -53,8 +54,8 @@ class VisualNet_motion(nn.Module):
 #         N = 3
 #         N = x.shape[0]//B
 #         x = x.view(B, N, C, SL, H, W).permute(0,2,1,3,4,5).contiguous().view(B,C,N*SL,H,W)
-        
-        features = self.visualnet(x)
+        _, features = self.visualnet(x)
+#         features = self.visualnet(x)
         features = nn.functional.avg_pool3d(features, kernel_size = (features.shape[2], features.shape[3], features.shape[4])).squeeze()
         features_1 = self.linear1_1(features)
         features_2 = self.linear1_2(features)
@@ -76,10 +77,15 @@ class OnePath_classifier(nn.Module):
         super().__init__()
         
 
-        model = DPC_RNN(
-                        sample_size=64, num_seq=8, seq_len=5, network="monkeynet", pred_step=3
+#         model = DPC_RNN(
+#                         sample_size=64, num_seq=8, seq_len=5, network="monkeynet", pred_step=3
+#                         )
+        model = DPC_Plus(
+                        sample_size=64, num_seq=8, seq_len=5, network="monkeynet", pred_step=3, heads=['heading','obj']
                         )
+    
         if pretrained is True:
+            print('pretrained model loaded')
             checkpoint = torch.load(path)
             subnet_dict = extract_subnet_dict(checkpoint["state_dict"])
 
